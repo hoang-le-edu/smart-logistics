@@ -1,0 +1,47 @@
+Hành động (on-chain),Vai trò được phép chính,Mô tả
+createShipment(metadataCid),SHIPPER,"Tạo mới một lô hàng, lưu thông tin mô tả (metadataCid) như vận đơn, danh mục hàng. Có thể mint NFT đại diện cho lô hàng."
+"updateMilestone(..., PICKED_UP)",CARRIER,"Xác nhận đã nhận hàng từ SHIPPER. Đính kèm bằng chứng (CID ảnh niêm phong, biên bản nhận). Kích hoạt mở escrow 40%."
+"updateMilestone(..., IN_TRANSIT)",CARRIER,"Xác nhận hàng đang trên đường vận chuyển, có thể đính kèm log GPS hoặc giấy tờ vận chuyển. Mở thêm 30% escrow."
+"updateMilestone(..., ARRIVED_AT_WAREHOUSE)",WAREHOUSE,Xác nhận hàng đã đến kho trung gian hoặc kho đích. Lưu bằng chứng nhận hàng tại kho.
+"updateMilestone(..., DELIVERED)",BUYER,Xác nhận đã nhận hàng thành công. Đính kèm biên bản giao hàng hoặc ảnh POD. Escrow mở 30% còn lại.
+"attachDocument(id, docType, cid)","SHIPPER, CARRIER, BUYER, WAREHOUSE","Gắn thêm chứng từ (CID file PDF, ảnh, JSON) cho lô hàng – ví dụ: hoá đơn, vận đơn, biên bản, ảnh xác thực."
+"open_escrow(id, …)",BUYER (hoặc bên thanh toán),"Mở hợp đồng ký quỹ cho lô hàng, thiết lập tổng tiền, người nhận (payee) và tỷ lệ giải ngân theo mốc."
+"deposit(id, total)",BUYER,Nạp tổng số tiền vào escrow (bằng token ERC-20). Tiền được giữ trong hợp đồng cho đến khi đạt từng mốc.
+"release(id, index)",Bất kỳ ai gọi được,"Kích hoạt giải ngân cho mốc tương ứng, nếu điều kiện đạt. Tiền được chuyển tới người nhận (payee)."
+refund(id),BUYER,Hoàn tiền phần chưa giải ngân nếu lô hàng quá hạn hoặc bị hủy.
+"grant_role(role, user) / revoke_role(role, user)",ADMIN,"Cấp hoặc thu hồi quyền cho các vai trò khác (SHIPPER, CARRIER, BUYER...)."
+"forceResolve(id, action) (tuỳ chọn)",ADMIN,"Xử lý tranh chấp: cưỡng chế giải ngân hoặc hoàn tiền khi có khiếu nại, lỗi hoặc gian lận."
+,,
+,,
+LogiToken.sol (ERC-20),"Dùng làm token thanh toán giữa BUYER ↔ CARRIER.
+Kế thừa từ OpenZeppelin/ERC20.sol.
+Các hàm chính:
+- mint(address to, uint amount)
+- approve/transferFrom để Escrow dùng token.",
+ShipmentRegistry.sol,"Lưu thông tin lô hàng + trạng thái logistics.
+Hàm chính:
+createShipment(string memory cid)
+updateMilestone(uint id, uint8 newMilestone, string memory proofCid)
+attachDocument(uint id, string memory docType, string memory cid)","struct Shipment {
+    address shipper;
+    address carrier;
+    address buyer;
+    string metadataCid;
+    uint8 milestone; // 0=CREATED,1=PICKED_UP,...
+    bool exists;
+}"
+EscrowMilestone.sol,"Giữ tiền ký quỹ (token LOGI) và giải ngân theo từng mốc.
+Hàm chính:
+openEscrow(uint id, address payee, uint total, uint8[4] percents, uint deadline)
+deposit(uint id)
+release(uint id, uint index)
+refund(uint id)","struct Escrow {
+    address payer;
+    address payee;
+    uint256 total;
+    uint8[4] percents; // 30/30/20/20
+    bool[4] released;
+    uint256 deadline;
+}"
+ShipmentNFT.sol (tuỳ chọn),"Mỗi lô hàng là một NFT (ERC-721).
+Đại diện cho quyền sở hữu & có thể giao dịch trên Marketplace.",

@@ -1,0 +1,34 @@
+STT,Nghiệp vụ (Use Case),Mô tả chi tiết,Contract liên quan
+1,Đăng ký lô hàng (Create Shipment),"Shipper tạo một shipment mới, gồm CID mô tả hàng hóa, thông tin người vận chuyển (carrier), người nhận hàng (buyer). Hệ thống lưu vào blockchain và khởi tạo trạng thái CREATED.",ShipmentRegistry
+2,Cập nhật tiến trình vận chuyển (Update Milestone),Carrier hoặc Buyer cập nhật trạng thái lô hàng theo chuỗi hợp lệ: CREATED → PICKED_UP → IN_TRANSIT → ARRIVED → DELIVERED. Mỗi lần cập nhật sẽ lưu thêm bằng chứng CID.,ShipmentRegistry
+3,Tạo Escrow & ký quỹ (Open Escrow / Deposit),"Buyer mở tài khoản escrow cho mỗi shipment, xác định tổng tiền, các tỉ lệ thanh toán theo từng milestone và deadline. Buyer gửi LOGI Token vào escrow.","EscrowMilestone, LogiToken"
+4,Giải ngân theo từng milestone (Release Payment),"Khi một milestone hoàn thành, Buyer hoặc hợp đồng cho phép giải ngân phần % tương ứng từ escrow chuyển cho Carrier.",EscrowMilestone
+5,Refund (Hoàn tiền nếu không hoàn tất),"Nếu quá deadline mà shipment chưa hoàn thành đầy đủ, số tiền chưa giải ngân sẽ được trả lại Buyer.",EscrowMilestone
+,,,
+,,,
+STT,Ràng buộc logic,Mô tả,Code liên quan
+1,Kiểm tra quyền cập nhật shipment,Chỉ carrier hoặc buyer của shipment mới được phép cập nhật milestone.,`require(msg.sender == s.carrier
+2,Kiểm tra thứ tự milestone hợp lệ,Trạng thái mới phải đúng thứ tự liền kề (không thể nhảy cóc hoặc đi lùi). Ví dụ: từ CREATED chỉ được chuyển sang PICKED_UP.,require(uint(newStatus) == uint(s.status) + 1);
+3,Không cho phép giải ngân lại một milestone,Mỗi mốc thanh toán chỉ được giải ngân 1 lần.,"require(!e.released[index], ""Already released"");"
+4,Buyer phải approve token trước khi deposit,Buyer cần cấp quyền cho Escrow contract mới có thể chuyển LOGI Token vào escrow.,"token.transferFrom(e.payer, address(this), e.total);"
+5,Hoàn tiền nếu shipment thất bại hoặc quá hạn,"Khi deadline hết hạn, các milestone chưa release được hoàn lại buyer.",Logic refund trong Escrow
+,,,
+,,,
+,"✔ 1. Nghiệp vụ chính của hệ thống
+UC01 – Tạo lô hàng (Create Shipment)
+UC02 – Cập nhật tiến trình vận chuyển (Update Milestone)
+UC03 – Tạo Escrow thanh toán (Open Escrow)
+UC04 – Deposit & Release Payment (Giải ngân)
+UC05 – Refund khi thất bại (Refund Escrow)
+
+✔ 2. Ràng buộc logic chính
+RB01 – Quyền hạn cập nhật milestone phải đúng role
+RB02 – Luồng trạng thái phải đúng trình tự
+RB03 – Thanh toán phải theo milestone, không được giải ngân trùng
+RB04 – Buyer phải approve token trước khi deposit
+RB05 – Refund khi quá deadline
+
+✔ 3. Hai contract chính là logic nghiệp vụ
+ShipmentRegistry → logistics workflow
+EscrowMilestone → thanh toán theo từng milestone
+LogiToken → token thanh toán",,

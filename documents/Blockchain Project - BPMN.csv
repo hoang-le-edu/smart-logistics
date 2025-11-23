@@ -1,0 +1,30 @@
+Tác nhân chính (Participants / Pools / Lanes),,,,,STT,Tên sơ đồ BPMN,Mục tiêu,Lane chính,Ghi chú
+Vai trò (Lane),Vai trò trong quy trình,,,,BPMN-1,Tạo lô hàng & khởi tạo hệ thống,"Mô tả quá trình Shipper tạo shipment, lưu metadata CID, gán vai trò.","Shipper, Smart Contract, IPFS",Bắt đầu toàn quy trình.
+Shipper,"Bên gửi hàng, tạo lô hàng",,,,BPMN-2,Mở Escrow & nạp tiền ký quỹ,"Buyer mở escrow, nạp token, contract kiểm tra & khóa tiền.","Buyer, Escrow Contract, LogiToken",Thường đi liền ngay sau BPMN-1.
+Buyer,"Bên mua hàng, nạp tiền escrow & xác nhận giao hàng",,,,BPMN-3,Quy trình vận chuyển & milestone release,"Chuỗi mốc: PICKED_UP → IN_TRANSIT → ARRIVED → DELIVERED, kèm release từng phần.","Carrier, Warehouse, Buyer, Escrow Contract, IPFS","Đây là sơ đồ chính, nên chi tiết hơn các sơ đồ khác."
+Carrier,"Đơn vị vận chuyển, cập nhật mốc & nhận tiền",,,,BPMN-4,"Giải ngân, hoàn tiền & xử lý lỗi","Các nhánh ngoại lệ: hết hạn, sai vai trò, tranh chấp, refund.","Buyer, Admin, Escrow Contract",Dùng event boundary “Deadline expired / Dispute”.
+Warehouse (tuỳ chọn),Xác nhận hàng đến kho,,,,BPMN-5,Ghi log & hiển thị trên DApp (UI flow),Liên kết on-chain event → Frontend cập nhật trạng thái giao diện.,"Smart Contract, DApp Frontend, IPFS",Phần phụ nhưng cần để mô tả kết nối UI.
+Smart Contract System,"Blockchain xử lý nghiệp vụ: ShipmentRegistry, EscrowMilestone, LogiToken",,,,,,,,
+IPFS Storage,"Lưu chứng từ, ảnh, hoá đơn (off-chain)",,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+Tác nhân,Hành động,Kết quả / Sự kiện,,,,,,,
+Shipper,Tạo Shipment,Event: ShipmentCreated,,,,,,,
+Buyer,Mở Escrow,Event: EscrowOpened,,,,,,,
+Buyer,Nạp Token,Event: FundsDeposited,,,,,,,
+Carrier,Cập nhật Milestone,Event: MilestoneUpdated,,,,,,,
+Escrow Contract,Giải ngân,Event: FundsReleased,,,,,,,
+Buyer,Xác nhận giao hàng,Event: ShipmentDelivered,,,,,,,
+Buyer,Refund,Event: RefundIssued,,,,,,,
+Admin,Cấp quyền / xử lý lỗi,Event: AdminAction,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+Task chính,"[Tạo Shipment] → [Mở Escrow] → [Nạp Token] → 
+[Cập nhật PICKED_UP] → [Giải ngân 30%] → 
+[IN_TRANSIT] → [Giải ngân 30%] →
+[ARRIVED] → [Giải ngân 20%] →
+[DELIVERED] → [Giải ngân 20%] →
+[Kết thúc]",,,,,,,,
+Nhánh lỗi,"“Trễ hạn” → Refund
+“Sai role” → Transaction reverted
+“Upload thất bại IPFS” → retry",,,,,,,,

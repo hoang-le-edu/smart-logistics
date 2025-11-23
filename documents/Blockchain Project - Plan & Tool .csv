@@ -1,0 +1,22 @@
+Thành phần,Công cụ / Thư viện,Ghi chú
+Ngôn ngữ Smart Contract,Solidity ≥ 0.8.20,"Ổn định, hỗ trợ nhiều thư viện (OpenZeppelin)"
+Framework,Hardhat hoặc Foundry (khuyên dùng Hardhat),"Compile, test, deploy dễ dàng"
+IDE,VSCode,"Cài extensions Solidity, Prettier"
+Blockchain,Ethereum Testnet (Sepolia),Dùng với MetaMask
+Ví,MetaMask,Quản lý tài khoản và ký giao dịch
+Lưu trữ phi tập trung,IPFS (Pinata / Web3.storage),"Lưu file chứng từ, ảnh, PDF"
+Thư viện chuẩn,OpenZeppelin Contracts,"ERC20, ERC721, AccessControl, ReentrancyGuard"
+Giao diện DApp,React + Ethers.js + Tailwind,"Kết nối MetaMask, gọi contract"
+Backend tùy chọn,Node.js (Express hoặc Next.js API routes),Nếu cần upload IPFS qua server
+,,
+,,
+Bước,Công việc,Công cụ
+1,Tạo project Hardhat (npx hardhat init),Hardhat
+2,"Cài OpenZeppelin, compile contract",npm + Solidity
+3,Viết & test hợp đồng trên Hardhat local,Mocha + Chai
+4,Deploy lên Sepolia (cấu hình .env + Alchemy/Infura RPC),Hardhat
+5,Lưu ABI + address để frontend dùng,JSON export
+6,"Tạo React DApp, kết nối MetaMask",ethers.js
+7,"Upload file lên IPFS, lưu CID on-chain",Pinata
+8,Test toàn bộ quy trình (Buyer ↔ Carrier),MetaMask Testnet
+9,Viết báo cáo + demo video,✅

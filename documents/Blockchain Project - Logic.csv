@@ -1,0 +1,33 @@
+Vai trò ,,,Bước,Vai trò,Hành động,Kết quả
+SHIPPER,bên gửi hàng (chủ hàng).,,1,SHIPPER,Tạo lô hàng → createShipment(cid),NFT sinh ra / shipmentID mới
+CARRIER,bên vận chuyển (hãng xe/container/tàu).,,2,BUYER,"Mở Escrow, nạp tiền bằng token",Tiền được giữ trong contract
+WAREHOUSE,kho bãi (điểm nhận/trả hàng).,,3,CARRIER,"Cập nhật các mốc: PICKED_UP, IN_TRANSIT",Kích hoạt release từng phần
+BUYER,người mua (bên nhận hàng cuối).,,4,Escrow Contract,"Khi milestone đạt, release(index)",Tiền trả dần theo 30/30/20/20
+ADMIN,"quản trị hệ thống, có quyền cấp/thu hồi các vai trò trên.",,5,BUYER,Xác nhận DELIVERED,Giải ngân phần còn lại
+,,,6,Nếu trễ hạn,refund(),Buyer được hoàn phần chưa giải ngân
+,,,,,,
+,,,,,,
+Mốc (Milestone),các bước trạng thái của lô hàng theo thời gian.,,,,,
+CREATED → PICKED_UP → IN_TRANSIT → ARRIVED_AT_WAREHOUSE → DELIVERED,,,,,,
+CREATED,"tạo lô hàng, ghi metadata CID (manifest, BOL…).",,,,,
+PICKED_UP,xác nhận đã nhận hàng (kèm ảnh/container seal CID).,,,,,
+IN_TRANSIT,đang vận chuyển (CID log GPS/biên bản).,,,,,
+ARRIVED_AT_WAREHOUSE,kho nhận (kèm phiếu nhập/ảnh).,,,,,
+DELIVERED,xác nhận đã nhận (biên bản giao nhận/ảnh POD).,,,,,
+,,,,,,
+smart-logistics/,,,,,,
+├── contracts/,,,,,,
+│   ├── LogiToken.sol,,,,,,
+│   ├── ShipmentRegistry.sol,,,,,,
+│   ├── EscrowMilestone.sol,,,,,,
+│   └── ShipmentNFT.sol  (tuỳ chọn),,,,,,
+├── scripts/,,,,,,
+│   ├── deploy.js,,,,,,
+│   ├── setup.js,,,,,,
+├── test/,,,,,,
+│   ├── Escrow.test.js,,,,,,
+│   └── Registry.test.js,,,,,,
+├── frontend/,,,,,,
+│   └── (React App - giao diện DApp),,,,,,
+├── hardhat.config.js,,,,,,
+└── package.json,,,,,,

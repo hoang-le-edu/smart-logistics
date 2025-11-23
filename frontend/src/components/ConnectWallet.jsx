@@ -1,0 +1,228 @@
+import { useState, useEffect } from "react";
+import { ethers } from "ethers";
+
+export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
+  const [account, setAccount] = useState(null);
+  const [chainId, setChainId] = useState(null);
+  const [balance, setBalance] = useState("0");
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    checkConnection();
+
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("chainChanged", handleChainChanged);
+    }
+
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener(
+          "accountsChanged",
+          handleAccountsChanged
+        );
+        window.ethereum.removeListener("chainChanged", handleChainChanged);
+      }
+    };
+  }, []);
+
+  const checkConnection = async () => {
+    if (window.ethereum) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const accounts = await provider.listAccounts();
+
+        if (accounts.length > 0) {
+          const signer = await provider.getSigner();
+          const address = await signer.getAddress();
+          const network = await provider.getNetwork();
+          const bal = await provider.getBalance(address);
+
+          setAccount(address);
+          setChainId(Number(network.chainId));
+          setBalance(ethers.formatEther(bal));
+
+          // Notify parent components
+          if (onAccountChange) onAccountChange(address);
+          if (onChainIdChange) onChainIdChange(Number(network.chainId));
+        }
+      } catch (err) {
+        console.error("Error checking connection:", err);
+      }
+    }
+  };
+
+  const connectWallet = async () => {
+    if (!window.ethereum) {
+      setError("Please install MetaMask to use this app");
+      return;
+    }
+
+    setIsConnecting(true);
+    setError("");
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+      const network = await provider.getNetwork();
+      const bal = await provider.getBalance(address);
+
+      setAccount(address);
+      setChainId(Number(network.chainId));
+      setBalance(ethers.formatEther(bal));
+
+      // Notify parent components
+      if (onAccountChange) onAccountChange(address);
+      if (onChainIdChange) onChainIdChange(Number(network.chainId));
+    } catch (err) {
+      console.error("Error connecting wallet:", err);
+      setError(err.message || "Failed to connect wallet");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const disconnectWallet = () => {
+    setAccount(null);
+    setChainId(null);
+    setBalance("0");
+
+    // Notify parent components
+    if (onAccountChange) onAccountChange(null);
+    if (onChainIdChange) onChainIdChange(null);
+  };
+
+  const handleAccountsChanged = (accounts) => {
+    if (accounts.length === 0) {
+      disconnectWallet();
+    } else {
+      checkConnection();
+    }
+  };
+
+  const handleChainChanged = () => {
+    window.location.reload();
+  };
+
+  const switchNetwork = async (targetChainId) => {
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${targetChainId.toString(16)}` }],
+      });
+    } catch (err) {
+      // Chain not added to MetaMask
+      if (err.code === 4902) {
+        if (targetChainId === 11155111) {
+          await addSepoliaNetwork();
+        }
+      } else {
+        console.error("Error switching network:", err);
+        setError("Failed to switch network");
+      }
+    }
+  };
+
+  const addSepoliaNetwork = async () => {
+    try {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: "0xaa36a7",
+            chainName: "Sepolia Testnet",
+            nativeCurrency: {
+              name: "Sepolia ETH",
+              symbol: "ETH",
+              decimals: 18,
+            },
+            rpcUrls: ["https://sepolia.infura.io/v3/"],
+            blockExplorerUrls: ["https://sepolia.etherscan.io/"],
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Error adding network:", err);
+      setError("Failed to add Sepolia network");
+    }
+  };
+
+  const getNetworkName = (id) => {
+    const networks = {
+      1: "Ethereum Mainnet",
+      11155111: "Sepolia Testnet",
+      31337: "Hardhat Local",
+    };
+    return networks[id] || `Chain ID: ${id}`;
+  };
+
+  const formatAddress = (addr) => {
+    if (!addr) return "";
+    return `${addr.substring(0, 6)}...${addr.substring(38)}`;
+  };
+
+  return (
+    <div className="connect-wallet">
+      {!account ? (
+        <div className="wallet-connect-section">
+          <button
+            onClick={connectWallet}
+            disabled={isConnecting}
+            className="connect-button"
+          >
+            {isConnecting ? "Connecting..." : "Connect Wallet"}
+          </button>
+          {error && <p className="error-message">{error}</p>}
+          {!window.ethereum && (
+            <p className="warning-message">
+              Please install{" "}
+              <a
+                href="https://metamask.io/download/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                MetaMask
+              </a>{" "}
+              to use this app
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="wallet-info">
+          <div className="account-info">
+            <div className="account-details">
+              <div className="address">
+                <strong>Account:</strong> {formatAddress(account)}
+              </div>
+              <div className="network">
+                <strong>Network:</strong> {getNetworkName(chainId)}
+              </div>
+              <div className="balance">
+                <strong>Balance:</strong> {parseFloat(balance).toFixed(4)} ETH
+              </div>
+            </div>
+            <button onClick={disconnectWallet} className="disconnect-button">
+              Disconnect
+            </button>
+          </div>
+
+          {chainId !== 31337 && chainId !== 11155111 && (
+            <div className="network-warning">
+              <p>⚠️ Please switch to Sepolia Testnet or Local Network</p>
+              <button
+                onClick={() => switchNetwork(11155111)}
+                className="switch-network-button"
+              >
+                Switch to Sepolia
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

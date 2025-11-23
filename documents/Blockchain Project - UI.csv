@@ -1,0 +1,36 @@
+Trang,Vai trò,Chức năng chính,,,,
+Login / Connect Wallet,Tất cả,Kết nối MetaMask,,,,
+Dashboard,Tất cả,Hiển thị danh sách shipment,,,,
+Buyer Panel,BUYER,- Nạp tiền vào Escrow- Xác nhận giao hàng- Hoàn tiền,,,,
+Shipper Panel,SHIPPER,- Tạo lô hàng- Đính kèm chứng từ CID,,,,
+Carrier Panel,CARRIER,- Cập nhật các mốc vận chuyển- Nhận giải ngân,,,,
+Admin Panel,ADMIN,- Cấp quyền vai trò- Xem log giao dịch,,,,
+Document Viewer,Tất cả,"Hiển thị file IPFS (ảnh, PDF, JSON)",,,,
+,,,,,,
+,,,Thư viện frontend cần cài,,,
+frontend/,,,"npm install react ethers web3modal wagmi viem
+npm install axios pinata-sdk
+npm install tailwindcss shadcn-ui",,,"ethers: kết nối contract + MetaMask
+web3modal / wagmi: quản lý ví dễ hơn
+axios + pinata-sdk: upload file IPFS
+tailwindcss + shadcn-ui: giao diện gọn đẹp"
+├── src/,,,,,,
+│   ├── pages/,,,,,,
+│   │   ├── Dashboard.jsx,,,,,,
+│   │   ├── BuyerPanel.jsx,,,,,,
+│   │   ├── ShipperPanel.jsx,,,,,,
+│   │   ├── CarrierPanel.jsx,,,,,,
+│   │   └── AdminPanel.jsx,,,,,,
+│   ├── components/,,,,,,
+│   │   ├── ConnectWallet.jsx,,,,,,
+│   │   ├── ShipmentCard.jsx,,,,,,
+│   │   └── EscrowForm.jsx,,,,,,
+│   ├── utils/,,,,,,
+│   │   ├── contracts.js,,,,,,
+│   │   ├── ipfs.js,,,,,,
+│   │   └── roles.js,,,,,,
+│   └── abis/,,,,,,
+│       ├── LogiToken.json,,,,,,
+│       ├── ShipmentRegistry.json,,,,,,
+│       └── EscrowMilestone.json,,,,,,
+└── package.json,,,,,,

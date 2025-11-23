@@ -1,0 +1,35 @@
+{
+  "name": "smart-logistics",
+  "version": "1.0.0",
+  "description": "Blockchain-based logistics management system with smart contracts and IPFS",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "setup:local": "hardhat run scripts/setup.js --network localhost",
+    "setup:sepolia": "hardhat run scripts/setup.js --network sepolia",
+    "node": "hardhat node",
+    "clean": "hardhat clean"
+  },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "smart-contracts",
+    "logistics",
+    "supply-chain",
+    "ipfs",
+    "escrow"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.27.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.2.0",
+    "dotenv": "^16.4.7"
+  }
+}
