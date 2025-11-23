@@ -76,7 +76,7 @@ export const getMilestoneStatusName = (status) => {
     "CREATED",
     "PICKED_UP",
     "IN_TRANSIT",
-    "ARRIVED_AT_WAREHOUSE",
+    "ARRIVED",
     "DELIVERED",
   ];
   return statuses[status] || "UNKNOWN";

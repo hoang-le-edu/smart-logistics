@@ -64,7 +64,7 @@ export default function BuyerPanel({ account, chainId }) {
               carrier: shipment.carrier,
               buyer: shipment.buyer,
               warehouse: shipment.warehouse,
-              milestoneStatus: Number(shipment.milestoneStatus),
+              milestoneStatus: Number(shipment.status),
               metadataCid: shipment.metadataCid,
               timestamp: Number(shipment.timestamp),
             };

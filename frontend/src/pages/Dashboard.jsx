@@ -7,7 +7,7 @@ import {
   getMilestoneColor,
   formatAddress,
 } from "../utils/contracts";
-import { getIPFSUrl } from "../utils/ipfs";
+import { getIPFSUrl, retrieveFromIPFS } from "../utils/ipfs";
 
 export default function Dashboard({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
@@ -46,6 +46,16 @@ export default function Dashboard({ account, chainId }) {
             const shipment = await registry.getShipment(id);
             const documents = await registry.getShipmentDocuments(id);
 
+            // Try to fetch metadata (origin/destination/description)
+            let meta = {};
+            if (shipment.metadataCid && shipment.metadataCid !== "") {
+              try {
+                meta = await retrieveFromIPFS(shipment.metadataCid);
+              } catch (e) {
+                console.warn("Failed to fetch metadata for", id.toString(), e);
+              }
+            }
+
             return {
               id: id.toString(),
               shipper: shipment.shipper,
@@ -56,6 +66,11 @@ export default function Dashboard({ account, chainId }) {
               status: Number(shipment.status),
               createdAt: new Date(Number(shipment.createdAt) * 1000),
               updatedAt: new Date(Number(shipment.updatedAt) * 1000),
+              origin: meta.origin || "-",
+              destination: meta.destination || "-",
+              description: meta.description || "",
+              weight: meta.weight || "",
+              items: meta.items || "",
               documents: documents.map((doc) => ({
                 docType: doc.docType,
                 cid: doc.cid,
@@ -101,6 +116,46 @@ export default function Dashboard({ account, chainId }) {
     if (shipment.warehouse.toLowerCase() === account.toLowerCase())
       roles.push("Warehouse");
     return roles.join(", ");
+  };
+
+  const canProgress = (shipment) => {
+    const s = shipment.status;
+    if (s >= 4) return false;
+    const next = s + 1;
+    if (next === 1) return shipment.shipper.toLowerCase() === account.toLowerCase();
+    if (next === 2 || next === 3) return shipment.carrier.toLowerCase() === account.toLowerCase();
+    if (next === 4) return shipment.buyer.toLowerCase() === account.toLowerCase();
+    return false;
+  };
+
+  const getNextActionLabel = (status) => {
+    switch (status + 1) {
+      case 1: return 'Mark Picked Up';
+      case 2: return 'Mark In Transit';
+      case 3: return 'Mark Arrived';
+      case 4: return 'Confirm Delivered';
+      default: return '';
+    }
+  };
+
+  const progressShipment = async (shipment) => {
+    const nextStatus = shipment.status + 1;
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        'ShipmentRegistry',
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+      const tx = await registry.updateMilestone(shipment.id, nextStatus);
+      await tx.wait();
+      await loadShipments();
+    } catch (e) {
+      console.error('Progress error', e);
+      alert(e.message || 'Failed to update status');
+    }
   };
 
   if (!account) {
@@ -184,70 +239,49 @@ export default function Dashboard({ account, chainId }) {
         <div className="shipments-grid">
           {filteredShipments.map((shipment) => (
             <div key={shipment.id} className="shipment-card">
-              <div className="shipment-header">
-                <h3>Shipment #{shipment.id}</h3>
+              <div className="card-header">
+                <h4>#{shipment.id} {shipment.origin !== '-' && shipment.destination !== '-' && (
+                  <span className="route">{shipment.origin} → {shipment.destination}</span>
+                )}</h4>
                 <span
                   className={`status-badge status-${getMilestoneColor(
                     shipment.status
                   )}`}
+                  title={`Status updated ${shipment.updatedAt.toLocaleDateString()}`}
                 >
                   {getMilestoneStatusName(shipment.status)}
                 </span>
               </div>
-
               <div className="shipment-details">
-                <div className="detail-row">
-                  <strong>My Role:</strong> {getMyRole(shipment)}
-                </div>
-                <div className="detail-row">
-                  <strong>Shipper:</strong> {formatAddress(shipment.shipper)}
-                </div>
-                <div className="detail-row">
-                  <strong>Carrier:</strong> {formatAddress(shipment.carrier)}
-                </div>
-                <div className="detail-row">
-                  <strong>Buyer:</strong> {formatAddress(shipment.buyer)}
-                </div>
-                <div className="detail-row">
-                  <strong>Created:</strong>{" "}
-                  {shipment.createdAt.toLocaleDateString()}
-                </div>
-                <div className="detail-row">
-                  <strong>Updated:</strong>{" "}
-                  {shipment.updatedAt.toLocaleDateString()}
-                </div>
+                {shipment.description && (
+                  <div className="detail-row">
+                    <strong>Description:</strong> {shipment.description.length > 80 ? shipment.description.slice(0,77) + '…' : shipment.description}
+                  </div>
+                )}
+                <div className="detail-row"><strong>Role:</strong> {getMyRole(shipment)}</div>
+                <div className="detail-row"><strong>Shipper:</strong> {formatAddress(shipment.shipper)}</div>
+                <div className="detail-row"><strong>Carrier:</strong> {formatAddress(shipment.carrier)}</div>
+                <div className="detail-row"><strong>Buyer:</strong> {formatAddress(shipment.buyer)}</div>
+                <div className="detail-row"><strong>Created:</strong> {shipment.createdAt.toLocaleDateString()}</div>
                 {shipment.metadataCid && (
                   <div className="detail-row">
-                    <strong>Metadata:</strong>{" "}
-                    <a
-                      href={getIPFSUrl(shipment.metadataCid)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ipfs-link"
-                    >
-                      View on IPFS
-                    </a>
+                    <strong>Metadata:</strong>{' '}<a href={getIPFSUrl(shipment.metadataCid)} target="_blank" rel="noopener noreferrer">View on IPFS</a>
                   </div>
                 )}
                 {shipment.documents.length > 0 && (
-                  <div className="documents-section">
-                    <strong>Documents ({shipment.documents.length}):</strong>
-                    <ul className="documents-list">
-                      {shipment.documents.slice(0, 3).map((doc, idx) => (
-                        <li key={idx}>
-                          <a
-                            href={getIPFSUrl(doc.cid)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {doc.docType}
-                          </a>
-                        </li>
-                      ))}
-                      {shipment.documents.length > 3 && (
-                        <li>...and {shipment.documents.length - 3} more</li>
-                      )}
-                    </ul>
+                  <div className="detail-row">
+                    <strong>Docs:</strong>{' '}
+                    {shipment.documents.slice(0,2).map((d,i) => (
+                      <a key={i} href={getIPFSUrl(d.cid)} target="_blank" rel="noopener noreferrer" style={{marginRight:'6px'}}>{d.docType || 'Doc '+(i+1)}</a>
+                    ))}
+                    {shipment.documents.length > 2 && <span>+{shipment.documents.length - 2} more</span>}
+                  </div>
+                )}
+                {canProgress(shipment) && (
+                  <div className="detail-row">
+                    <button className="action-button primary" onClick={() => progressShipment(shipment)}>
+                      {getNextActionLabel(shipment.status)}
+                    </button>
                   </div>
                 )}
               </div>

@@ -100,10 +100,13 @@ export default function ShipperPanel({ account, chainId }) {
       }
 
       // Step 2: Upload additional file if provided
+      let initialDocumentCids = [];
+      let initialDocumentTypes = [];
       if (file && isPinataConfigured()) {
         const fileResult = await uploadToIPFS(file);
         console.log("File uploaded to IPFS:", fileResult.cid);
-        // Store file CID in metadata or attach later
+        initialDocumentCids = [fileResult.cid];
+        initialDocumentTypes = [file.name || "attachment"];
       }
 
       // Step 3: Create shipment on blockchain
@@ -124,7 +127,9 @@ export default function ShipperPanel({ account, chainId }) {
             formData.carrierAddress,
             formData.buyerAddress,
             warehouseAddr,
-            metadataCid
+            metadataCid,
+            initialDocumentCids,
+            initialDocumentTypes
           ),
         (receipt) => {
           setSuccess(`Shipment created successfully!`);

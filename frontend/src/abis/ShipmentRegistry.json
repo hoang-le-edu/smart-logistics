@@ -1,5 +1,5 @@
 {
-  "address": "0xd4A7C535081f0870033bC0832911BFf4876A665e",
+  "address": "0x8cBb25a0eFc4a635EA1545504Cf72652Cff8F2D5",
   "abi": [
     {
       "inputs": [],
@@ -44,8 +44,26 @@
         {
           "indexed": false,
           "internalType": "string",
+          "name": "docType",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
           "name": "documentCid",
           "type": "string"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "uploadedBy",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
         }
       ],
       "name": "DocumentAttached",
@@ -249,6 +267,11 @@
         },
         {
           "internalType": "string",
+          "name": "docType",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
           "name": "documentCid",
           "type": "string"
         }
@@ -279,6 +302,16 @@
           "internalType": "string",
           "name": "metadataCid",
           "type": "string"
+        },
+        {
+          "internalType": "string[]",
+          "name": "documentCids",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "documentTypes",
+          "type": "string[]"
         }
       ],
       "name": "createShipment",
@@ -350,7 +383,7 @@
             },
             {
               "internalType": "enum ShipmentRegistry.MilestoneStatus",
-              "name": "milestoneStatus",
+              "name": "status",
               "type": "uint8"
             },
             {
@@ -360,7 +393,12 @@
             },
             {
               "internalType": "uint256",
-              "name": "timestamp",
+              "name": "createdAt",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "updatedAt",
               "type": "uint256"
             }
           ],
@@ -383,9 +421,31 @@
       "name": "getShipmentDocuments",
       "outputs": [
         {
-          "internalType": "string[]",
+          "components": [
+            {
+              "internalType": "string",
+              "name": "docType",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "cid",
+              "type": "string"
+            },
+            {
+              "internalType": "address",
+              "name": "uploadedBy",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "timestamp",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct ShipmentRegistry.Document[]",
           "name": "",
-          "type": "string[]"
+          "type": "tuple[]"
         }
       ],
       "stateMutability": "view",
