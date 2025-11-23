@@ -1,10 +1,10 @@
-require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+require('@nomicfoundation/hardhat-toolbox');
+require('dotenv').config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.20",
+    version: '0.8.20',
     settings: {
       optimizer: {
         enabled: true,
@@ -17,11 +17,11 @@ module.exports = {
       chainId: 31337,
     },
     localhost: {
-      url: "http://127.0.0.1:8545",
+      url: 'http://127.0.0.1:8545',
       chainId: 31337,
     },
     sepolia: {
-      url: process.env.SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/",
+      url: process.env.SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/',
       accounts:
         process.env.PRIVATE_KEY && process.env.PRIVATE_KEY.length === 64
           ? [process.env.PRIVATE_KEY]
@@ -30,16 +30,16 @@ module.exports = {
     },
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY || "",
+    apiKey: process.env.ETHERSCAN_API_KEY || '',
   },
   paths: {
-    sources: "./contracts",
-    tests: "./test",
-    cache: "./cache",
-    artifacts: "./artifacts",
+    sources: './contracts',
+    tests: './test',
+    cache: './cache',
+    artifacts: './artifacts',
   },
   gasReporter: {
-    enabled: process.env.REPORT_GAS === "true",
-    currency: "USD",
+    enabled: process.env.REPORT_GAS === 'true',
+    currency: 'ETH',
   },
 };
