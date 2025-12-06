@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { ShipmentRegistryABI } from "../abis";
+import { getContract } from "../utils/contracts";
 
 export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
   const [account, setAccount] = useState(null);
@@ -7,6 +9,8 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
   const [balance, setBalance] = useState("0");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [roleName, setRoleName] = useState("");
 
   useEffect(() => {
     checkConnection();
@@ -43,6 +47,9 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
           setChainId(Number(network.chainId));
           setBalance(ethers.formatEther(bal));
 
+          // Load display name and role
+          await loadIdentity(provider, address, Number(network.chainId));
+
           // Notify parent components
           if (onAccountChange) onAccountChange(address);
           if (onChainIdChange) onChainIdChange(Number(network.chainId));
@@ -75,6 +82,9 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
       setChainId(Number(network.chainId));
       setBalance(ethers.formatEther(bal));
 
+      // Load display name and role
+      await loadIdentity(provider, address, Number(network.chainId));
+
       // Notify parent components
       if (onAccountChange) onAccountChange(address);
       if (onChainIdChange) onChainIdChange(Number(network.chainId));
@@ -90,6 +100,8 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
     setAccount(null);
     setChainId(null);
     setBalance("0");
+    setDisplayName("");
+    setRoleName("");
 
     // Notify parent components
     if (onAccountChange) onAccountChange(null);
@@ -165,6 +177,23 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
     return `${addr.substring(0, 6)}...${addr.substring(38)}`;
   };
 
+  const loadIdentity = async (provider, addr, cId) => {
+    try {
+      const signer = await provider.getSigner();
+      const registry = getContract("ShipmentRegistry", ShipmentRegistryABI.abi, signer, cId);
+      const name = await registry.displayName(addr);
+      const isAdmin = await registry.hasRole(await registry.DEFAULT_ADMIN_ROLE(), addr);
+      const isShipper = await registry.hasRole(await registry.SHIPPER_ROLE(), addr);
+      const isCarrier = await registry.hasRole(await registry.CARRIER_ROLE(), addr);
+      const isBuyer = await registry.hasRole(await registry.BUYER_ROLE(), addr);
+      setDisplayName(name || "");
+      const r = isAdmin ? "Admin" : isShipper ? "Shipper" : isCarrier ? "Carrier" : isBuyer ? "Buyer" : "";
+      setRoleName(r);
+    } catch (e) {
+      console.warn("Load identity failed", e);
+    }
+  };
+
   return (
     <div className="connect-wallet" style={{ color: "#000" }}>
       {!account ? (
@@ -198,7 +227,13 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
           <div className="account-info">
             <div className="account-details">
               <div className="address" style={{ color: "#000" }}>
-                <strong>Account:</strong> {formatAddress(account)}
+                <div><strong>Account:</strong> {formatAddress(account)}</div>
+                {displayName && (
+                  <div><strong>Name:</strong> {displayName}</div>
+                )}
+                {roleName && (
+                  <div><strong>Role:</strong> {roleName}</div>
+                )}
               </div>
               <div className="network" style={{ color: "#000" }}>
                 <strong>Network:</strong> {getNetworkName(chainId)}

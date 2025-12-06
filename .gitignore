@@ -11,6 +11,7 @@ deployments/
 .env
 .env.local
 .env.*.local
+frontend/.env
 
 # TypeScript
 *.tsbuildinfo

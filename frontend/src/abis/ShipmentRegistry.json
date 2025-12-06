@@ -1,5 +1,5 @@
 {
-  "address": "0x8cBb25a0eFc4a635EA1545504Cf72652Cff8F2D5",
+  "address": "0x0C3E202A711238BBDEAC6AC7a2daE548DBA92775",
   "abi": [
     {
       "inputs": [],
@@ -31,6 +31,25 @@
       "inputs": [],
       "name": "ReentrancyGuardReentrantCall",
       "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "name": "DisplayNameUpdated",
+      "type": "event"
     },
     {
       "anonymous": false,
@@ -92,6 +111,37 @@
         }
       ],
       "name": "MilestoneUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "orderId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "buyer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "orderCid",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        }
+      ],
+      "name": "OrderCreated",
       "type": "event"
     },
     {
@@ -201,6 +251,12 @@
           "internalType": "string",
           "name": "metadataCid",
           "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "shippingFee",
+          "type": "uint256"
         }
       ],
       "name": "ShipmentCreated",
@@ -264,6 +320,37 @@
           "internalType": "uint256",
           "name": "shipmentId",
           "type": "uint256"
+        }
+      ],
+      "name": "acceptShipment",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "shipmentId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "metadataCid",
+          "type": "string"
+        }
+      ],
+      "name": "appendMetadata",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "shipmentId",
+          "type": "uint256"
         },
         {
           "internalType": "string",
@@ -284,18 +371,55 @@
     {
       "inputs": [
         {
-          "internalType": "address",
-          "name": "carrier",
-          "type": "address"
+          "internalType": "uint256",
+          "name": "shipmentId",
+          "type": "uint256"
         },
+        {
+          "internalType": "string",
+          "name": "reason",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "evidenceType",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "evidenceCid",
+          "type": "string"
+        }
+      ],
+      "name": "cancelShipment",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "orderCid",
+          "type": "string"
+        }
+      ],
+      "name": "createOrder",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
         {
           "internalType": "address",
           "name": "buyer",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "warehouse",
           "type": "address"
         },
         {
@@ -312,6 +436,11 @@
           "internalType": "string[]",
           "name": "documentTypes",
           "type": "string[]"
+        },
+        {
+          "internalType": "uint256",
+          "name": "shippingFee",
+          "type": "uint256"
         }
       ],
       "name": "createShipment",
@@ -323,6 +452,38 @@
         }
       ],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "displayName",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "escrowContract",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -377,19 +538,14 @@
               "type": "address"
             },
             {
-              "internalType": "address",
-              "name": "warehouse",
-              "type": "address"
-            },
-            {
               "internalType": "enum ShipmentRegistry.MilestoneStatus",
               "name": "status",
               "type": "uint8"
             },
             {
-              "internalType": "string",
-              "name": "metadataCid",
-              "type": "string"
+              "internalType": "string[]",
+              "name": "metadataCids",
+              "type": "string[]"
             },
             {
               "internalType": "uint256",
@@ -565,6 +721,19 @@
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "logiToken",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "bytes32",
@@ -596,6 +765,63 @@
         }
       ],
       "name": "revokeRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "name": "setDisplayName",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "name": "setDisplayNameFor",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_addr",
+          "type": "address"
+        }
+      ],
+      "name": "setEscrowContract",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_addr",
+          "type": "address"
+        }
+      ],
+      "name": "setLogiToken",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

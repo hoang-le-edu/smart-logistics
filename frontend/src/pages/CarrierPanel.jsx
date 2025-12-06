@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { ShipmentRegistryABI } from "../abis";
+import { EscrowMilestoneABI } from "../abis";
 import {
   getContract,
   handleTransaction,
@@ -15,11 +16,14 @@ import {
 
 export default function CarrierPanel({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
+  const [availableShipments, setAvailableShipments] = useState([]);
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [selectedMilestone, setSelectedMilestone] = useState(1); // 1 = PICKED_UP
+  const [cancelReason, setCancelReason] = useState("");
   const [proofFile, setProofFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
+  const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
@@ -30,11 +34,13 @@ export default function CarrierPanel({ account, chainId }) {
     { value: 2, label: "In Transit", canSetFrom: [1] },
     { value: 3, label: "Arrived at Destination", canSetFrom: [2] },
     { value: 4, label: "Delivered", canSetFrom: [3] },
+    { value: 5, label: "Cancel", canSetFrom: [0,1,2,3] },
   ];
 
   useEffect(() => {
     if (account) {
       loadCarrierShipments();
+      loadAvailableShipments();
     }
   }, [account, chainId]);
 
@@ -59,15 +65,15 @@ export default function CarrierPanel({ account, chainId }) {
 
           // Only include shipments where account is carrier
           if (shipment.carrier.toLowerCase() === account.toLowerCase()) {
+            const latestCid = shipment.metadataCids.length > 0 ? shipment.metadataCids[shipment.metadataCids.length - 1] : "";
             return {
               id: id.toString(),
               shipper: shipment.shipper,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
-              warehouse: shipment.warehouse,
               milestoneStatus: Number(shipment.status),
-              metadataCid: shipment.metadataCid,
-              timestamp: Number(shipment.timestamp),
+              metadataCid: latestCid,
+              timestamp: Number(shipment.createdAt),
             };
           }
           return null;
@@ -80,6 +86,47 @@ export default function CarrierPanel({ account, chainId }) {
       setError(parseContractError(err));
     } finally {
       setLoadingShipments(false);
+    }
+  };
+
+  const loadAvailableShipments = async () => {
+    setLoadingAvailable(true);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        provider,
+        chainId
+      );
+
+      const total = await registry.getTotalShipments();
+      const list = [];
+      const count = Number(total);
+      for (let i = 0; i < count; i++) {
+        try {
+          const s = await registry.getShipment(i);
+          const isUnassigned = s.carrier === ethers.ZeroAddress;
+          const isCreated = Number(s.status) === 0; // CREATED
+          if (isUnassigned && isCreated) {
+            const latestCid = s.metadataCids.length > 0 ? s.metadataCids[s.metadataCids.length - 1] : "";
+            list.push({
+              id: i.toString(),
+              shipper: s.shipper,
+              buyer: s.buyer,
+              metadataCid: latestCid,
+              timestamp: Number(s.createdAt),
+            });
+          }
+        } catch (e) {
+          // skip
+        }
+      }
+      setAvailableShipments(list.reverse());
+    } catch (e) {
+      console.error("Error loading available shipments:", e);
+    } finally {
+      setLoadingAvailable(false);
     }
   };
 
@@ -100,14 +147,18 @@ export default function CarrierPanel({ account, chainId }) {
       return;
     }
 
-    if (
-      !canUpdateMilestone(selectedShipment.milestoneStatus, selectedMilestone)
-    ) {
+    if (!canUpdateMilestone(selectedShipment.milestoneStatus, selectedMilestone)) {
       setError(
         `Cannot update from ${getMilestoneStatusName(
           selectedShipment.milestoneStatus
         )} to ${getMilestoneStatusName(selectedMilestone)}`
       );
+      return;
+    }
+
+    // Cancel path requires reason
+    if (selectedMilestone === 5 && !cancelReason.trim()) {
+      setError("Cancel reason is required");
       return;
     }
 
@@ -141,18 +192,23 @@ export default function CarrierPanel({ account, chainId }) {
       );
 
       const receipt = await handleTransaction(
-        () => registry.updateMilestone(selectedShipment.id, selectedMilestone),
+        () =>
+          selectedMilestone === 5
+            ? registry.cancelShipment(selectedShipment.id, cancelReason.trim(), "", "")
+            : registry.updateMilestone(selectedShipment.id, selectedMilestone),
         async (receipt) => {
           setSuccess(
-            `Milestone updated to ${getMilestoneStatusName(selectedMilestone)}!`
+            selectedMilestone === 5
+              ? "Shipment canceled successfully"
+              : `Milestone updated to ${getMilestoneStatusName(selectedMilestone)}!`
           );
           setTxHash(receipt.hash);
 
           // Step 3: Attach proof document if available
-          if (proofCid) {
+          if (proofCid && selectedMilestone !== 5) {
             try {
               await handleTransaction(
-                () => registry.attachDocument(selectedShipment.id, proofCid),
+                () => registry.attachDocument(selectedShipment.id, "Proof", proofCid),
                 () => {
                   console.log("Proof document attached to shipment");
                 },
@@ -169,6 +225,7 @@ export default function CarrierPanel({ account, chainId }) {
           await loadCarrierShipments();
           setSelectedShipment(null);
           setProofFile(null);
+          setCancelReason("");
         },
         (errorMsg) => {
           setError(parseContractError({ message: errorMsg }));
@@ -178,6 +235,60 @@ export default function CarrierPanel({ account, chainId }) {
       console.log("Transaction receipt:", receipt);
     } catch (err) {
       console.error("Error updating milestone:", err);
+      setError(parseContractError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const acceptShipment = async (shipmentId) => {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    setTxHash("");
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      // Check escrow is active before pickup
+      try {
+        const escrow = getContract(
+          "EscrowMilestone",
+          EscrowMilestoneABI.abi,
+          provider,
+          chainId
+        );
+        const details = await escrow.getEscrowDetails(Number(shipmentId));
+        if (!details.isActive) {
+          setError("Buyer must open escrow before pickup");
+          setLoading(false);
+          return;
+        }
+      } catch (_) {
+        // If escrow contract not found or no details, block pickup
+        setError("Escrow not found or inactive. Ask buyer to open escrow first.");
+        setLoading(false);
+        return;
+      }
+
+      await handleTransaction(
+        () => registry.acceptShipment(shipmentId),
+        async (receipt) => {
+          setSuccess(`Accepted shipment #${shipmentId} and picked up.`);
+          setTxHash(receipt.hash);
+          await loadCarrierShipments();
+          await loadAvailableShipments();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Accept shipment error:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -216,6 +327,45 @@ export default function CarrierPanel({ account, chainId }) {
       </div>
 
       <div className="panel-content">
+        <div className="shipments-list" style={{ marginBottom: 24 }}>
+          <h3>Available Shipments to Accept ({availableShipments.length})</h3>
+          {loadingAvailable ? (
+            <p>Loading available shipments...</p>
+          ) : availableShipments.length === 0 ? (
+            <div className="empty-state">
+              <p>No open shipments to accept</p>
+            </div>
+          ) : (
+            <div className="shipments-grid">
+              {availableShipments.map((s) => (
+                <div key={s.id} className="shipment-card">
+                  <div className="card-header">
+                    <h4>Shipment #{s.id}</h4>
+                    <span className={`status-badge status-0`}>CREATED</span>
+                  </div>
+                  <div className="card-body">
+                    <p><strong>Shipper:</strong> {s.shipper.slice(0, 10)}...</p>
+                    <p><strong>Buyer:</strong> {s.buyer.slice(0, 10)}...</p>
+                    <p><strong>Created:</strong> {new Date(s.timestamp * 1000).toLocaleDateString()}</p>
+                    {s.metadataCid && (
+                      <a
+                        href={`https://gateway.pinata.cloud/ipfs/${s.metadataCid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="metadata-link"
+                      >
+                        View Metadata
+                      </a>
+                    )}
+                  </div>
+                  <div className="card-actions" style={{ padding: '8px 16px 16px' }}>
+                    <button className="action-button" disabled={loading} onClick={() => acceptShipment(s.id)}>Accept & Pick Up</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="shipments-list">
           <h3>Your Shipments ({shipments.length})</h3>
 
@@ -323,6 +473,23 @@ export default function CarrierPanel({ account, chainId }) {
                 </select>
               </div>
 
+              {selectedMilestone === 5 && (
+                <div className="form-group">
+                  <label htmlFor="cancelReason">
+                    Cancel Reason <span className="required">*</span>
+                  </label>
+                  <textarea
+                    id="cancelReason"
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Provide a clear reason for cancellation"
+                    rows={3}
+                    className="form-textarea"
+                    required
+                  />
+                </div>
+              )}
+
               <div className="form-group">
                 <label htmlFor="proof">
                   Attach Proof Document (Photo, Signature, GPS, etc.)
@@ -332,8 +499,12 @@ export default function CarrierPanel({ account, chainId }) {
                   id="proof"
                   onChange={handleFileChange}
                   accept=".pdf,.jpg,.jpeg,.png,.json"
-                  className="form-file"
+                    className="form-file"
+                    style={{ color: "#000", backgroundColor: "#fff" }}
                 />
+                  <div style={{ marginTop: 6, color: "#000" }}>
+                    {proofFile ? `Selected: ${proofFile.name}` : "No file selected"}
+                  </div>
                 {!isPinataConfigured() && (
                   <p className="hint warning">
                     ⚠️ IPFS not configured. Files won't be uploaded.

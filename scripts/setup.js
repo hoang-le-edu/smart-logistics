@@ -20,13 +20,17 @@ async function main() {
   const deployment = JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
   const { LogiToken, ShipmentRegistry, EscrowMilestone } = deployment.contracts;
 
-  const [admin, shipper, carrier, buyer] = await hre.ethers.getSigners();
+  const signers = await hre.ethers.getSigners();
+  const admin = signers[0];
+  const shipperAddr = process.env.SHIPPER_ADDRESS || (signers[1] ? signers[1].address : admin.address);
+  const carrierAddr = process.env.CARRIER_ADDRESS || (signers[2] ? signers[2].address : admin.address);
+  const buyerAddr = process.env.BUYER_ADDRESS || (signers[3] ? signers[3].address : admin.address);
 
   console.log("Using accounts:");
   console.log("Admin:     ", admin.address);
-  console.log("Shipper:   ", shipper.address);
-  console.log("Carrier:   ", carrier.address);
-  console.log("Buyer:     ", buyer.address);
+  console.log("Shipper:   ", shipperAddr);
+  console.log("Carrier:   ", carrierAddr);
+  console.log("Buyer:     ", buyerAddr);
   console.log();
 
   // Get contract instances
@@ -42,29 +46,49 @@ async function main() {
 
   // Grant roles in ShipmentRegistry
   console.log("Granting roles in ShipmentRegistry...");
-  await registry.grantShipperRole(shipper.address);
-  console.log("✓ Granted SHIPPER_ROLE to:", shipper.address);
+  await registry.grantShipperRole(shipperAddr);
+  console.log("✓ Granted SHIPPER_ROLE to:", shipperAddr);
 
-  await registry.grantCarrierRole(carrier.address);
-  console.log("✓ Granted CARRIER_ROLE to:", carrier.address);
+  await registry.grantCarrierRole(carrierAddr);
+  console.log("✓ Granted CARRIER_ROLE to:", carrierAddr);
 
-  await registry.grantBuyerRole(buyer.address);
-  console.log("✓ Granted BUYER_ROLE to:", buyer.address);
+  await registry.grantBuyerRole(buyerAddr);
+  console.log("✓ Granted BUYER_ROLE to:", buyerAddr);
 
   // Mint tokens to buyer for testing
-  console.log("\nMinting tokens to buyer...");
-  const buyerTokenAmount = hre.ethers.parseEther("10000");
-  await logiToken.mint(buyer.address, buyerTokenAmount);
-  console.log(
-    `✓ Minted ${hre.ethers.formatEther(buyerTokenAmount)} LOGI to buyer`
-  );
+  console.log("\nMinting tokens to buyer (if MINTER_ROLE available)...");
+  try {
+    const buyerTokenAmount = hre.ethers.parseEther("10000");
+    await logiToken.mint(buyerAddr, buyerTokenAmount);
+    console.log(
+      `✓ Minted ${hre.ethers.formatEther(buyerTokenAmount)} LOGI to buyer`
+    );
+  } catch (e) {
+    console.warn("Mint to buyer skipped:", e.message);
+  }
 
   // Mint tokens to carrier for testing
   const carrierTokenAmount = hre.ethers.parseEther("5000");
-  await logiToken.mint(carrier.address, carrierTokenAmount);
-  console.log(
-    `✓ Minted ${hre.ethers.formatEther(carrierTokenAmount)} LOGI to carrier`
-  );
+  try {
+    await logiToken.mint(carrierAddr, carrierTokenAmount);
+    console.log(
+      `✓ Minted ${hre.ethers.formatEther(carrierTokenAmount)} LOGI to carrier`
+    );
+  } catch (e) {
+    console.warn("Mint to carrier skipped:", e.message);
+  }
+
+  // Configure Registry integrations on current network
+  console.log("\nConfiguring Registry integrations...");
+  // Set LOGI token address for auto-mint
+  await registry.setLogiToken(LogiToken);
+  console.log("✓ setLogiToken:", LogiToken);
+  // Grant MINTER_ROLE on LogiToken to ShipmentRegistry
+  await logiToken.grantMinterRole(ShipmentRegistry);
+  console.log("✓ grantMinterRole to ShipmentRegistry:", ShipmentRegistry);
+  // Set Escrow contract for pickup guard
+  await registry.setEscrowContract(EscrowMilestone);
+  console.log("✓ setEscrowContract:", EscrowMilestone);
 
   // Optional: Create a test shipment
   if (process.env.CREATE_TEST_SHIPMENT === "true") {
@@ -81,19 +105,54 @@ async function main() {
   console.log("\n" + "=".repeat(60));
   console.log("SETUP SUMMARY");
   console.log("=".repeat(60));
+
+  // Sync addresses to frontend .env
+  try {
+    const frontendEnvPath = path.join(__dirname, "..", "frontend", ".env");
+    const networkKey = hre.network.name.toLowerCase();
+    // Build keys based on network
+    const REGISTRY_KEY = `VITE_${networkKey.toUpperCase()}_REGISTRY_ADDRESS`;
+    const ESCROW_KEY = `VITE_${networkKey.toUpperCase()}_ESCROW_ADDRESS`;
+    const LOGI_KEY = `VITE_${networkKey.toUpperCase()}_LOGITOKEN_ADDRESS`;
+
+    // Read existing .env if present
+    let envContent = fs.existsSync(frontendEnvPath)
+      ? fs.readFileSync(frontendEnvPath, "utf8")
+      : "";
+
+    const setLine = (content, key, value) => {
+      const regex = new RegExp(`^${key}=.*$`, "m");
+      if (regex.test(content)) {
+        return content.replace(regex, `${key}=${value}`);
+      }
+      return content + `${key}=${value}\n`;
+    };
+
+    envContent = setLine(envContent, REGISTRY_KEY, ShipmentRegistry);
+    envContent = setLine(envContent, ESCROW_KEY, EscrowMilestone);
+    envContent = setLine(envContent, LOGI_KEY, LogiToken);
+
+    fs.writeFileSync(frontendEnvPath, envContent, "utf8");
+    console.log("\n✓ Frontend .env updated:");
+    console.log(`  ${REGISTRY_KEY}=${ShipmentRegistry}`);
+    console.log(`  ${ESCROW_KEY}=${EscrowMilestone}`);
+    console.log(`  ${LOGI_KEY}=${LogiToken}`);
+  } catch (e) {
+    console.warn("Could not update frontend .env:", e.message);
+  }
   console.log("Roles granted:");
-  console.log("  SHIPPER:   ", shipper.address);
-  console.log("  CARRIER:   ", carrier.address);
-  console.log("  BUYER:     ", buyer.address);
+  console.log("  SHIPPER:   ", shipperAddr);
+  console.log("  CARRIER:   ", carrierAddr);
+  console.log("  BUYER:     ", buyerAddr);
   console.log("\nToken balances:");
   console.log(
     "  Buyer:   ",
-    hre.ethers.formatEther(await logiToken.balanceOf(buyer.address)),
+    hre.ethers.formatEther(await logiToken.balanceOf(buyerAddr)),
     "LOGI"
   );
   console.log(
     "  Carrier: ",
-    hre.ethers.formatEther(await logiToken.balanceOf(carrier.address)),
+    hre.ethers.formatEther(await logiToken.balanceOf(carrierAddr)),
     "LOGI"
   );
   console.log("=".repeat(60));

@@ -6,6 +6,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+interface ILogiToken is IERC20 {
+    function mint(address to, uint256 amount) external;
+}
+
 /**
  * @title EscrowMilestone
  * @dev Automated milestone-based payment escrow
@@ -16,6 +20,7 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
 
     bytes32 public constant BUYER_ROLE = keccak256("BUYER_ROLE");
     bytes32 public constant CARRIER_ROLE = keccak256("CARRIER_ROLE");
+    bytes32 public constant REGISTRY_ROLE = keccak256("REGISTRY_ROLE");
 
     IERC20 public immutable token;
 
@@ -64,6 +69,13 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
         uint256 amount
     );
 
+    event AdminAutoMintEscrowOpened(
+        uint256 indexed shipmentId,
+        address indexed buyer,
+        uint256 amount,
+        uint256 deadline
+    );
+
     constructor(address _token) {
         require(_token != address(0), "Invalid token address");
         token = IERC20(_token);
@@ -98,6 +110,71 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
         token.safeTransferFrom(msg.sender, address(this), amount);
 
         emit EscrowOpened(shipmentId, msg.sender, address(0), amount, deadline);
+    }
+
+    /**
+     * @dev Open escrow with admin auto-mint to contract, for cases buyer agrees to fee
+     * Requirements:
+     *  - caller has DEFAULT_ADMIN_ROLE
+     *  - this contract must have MINTER_ROLE on LogiToken
+     *  - amount > 0 and deadline in future
+     * Funds are minted directly to this contract, avoiding buyer approval/transfer.
+     */
+    function openEscrowByAdmin(
+        uint256 shipmentId,
+        address buyer,
+        uint256 amount,
+        uint256 deadline
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        require(buyer != address(0), "Invalid buyer");
+        require(amount > 0, "Amount must be greater than zero");
+        require(deadline > block.timestamp, "Deadline must be in the future");
+        require(!_escrows[shipmentId].isActive, "Escrow already exists");
+
+        // Mint LOGI to this contract; requires MINTER_ROLE granted to EscrowMilestone on LogiToken
+        ILogiToken(address(token)).mint(address(this), amount);
+
+        _escrows[shipmentId] = Escrow({
+            totalAmount: amount,
+            releasedAmount: 0,
+            buyer: buyer,
+            carrier: address(0),
+            deadline: deadline,
+            isActive: true,
+            isCompleted: false
+        });
+
+        emit AdminAutoMintEscrowOpened(shipmentId, buyer, amount, deadline);
+    }
+
+    /**
+     * @dev Open escrow initiated by ShipmentRegistry (requires REGISTRY_ROLE)
+     * Mints LOGI directly to this contract and activates escrow for given shipment.
+     */
+    function openEscrowByRegistry(
+        uint256 shipmentId,
+        address buyer,
+        uint256 amount,
+        uint256 deadline
+    ) external onlyRole(REGISTRY_ROLE) nonReentrant {
+        require(buyer != address(0), "Invalid buyer");
+        require(amount > 0, "Amount must be greater than zero");
+        require(deadline > block.timestamp, "Deadline must be in the future");
+        require(!_escrows[shipmentId].isActive, "Escrow already exists");
+
+        ILogiToken(address(token)).mint(address(this), amount);
+
+        _escrows[shipmentId] = Escrow({
+            totalAmount: amount,
+            releasedAmount: 0,
+            buyer: buyer,
+            carrier: address(0),
+            deadline: deadline,
+            isActive: true,
+            isCompleted: false
+        });
+
+        emit AdminAutoMintEscrowOpened(shipmentId, buyer, amount, deadline);
     }
 
     /**

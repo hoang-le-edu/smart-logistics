@@ -8,18 +8,30 @@ import {
   getMilestoneStatusName,
   formatTokenAmount,
 } from "../utils/contracts";
+import { uploadJSONToIPFS, isPinataConfigured, getIPFSUrl } from "../utils/ipfs";
 
 export default function BuyerPanel({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [escrowDetails, setEscrowDetails] = useState(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [tokenBalance, setTokenBalance] = useState("0");
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
+
+  // Order form state
+  const [orderForm, setOrderForm] = useState({
+    productName: "",
+    origin: "",
+    destination: "",
+    quantity: "",
+    notes: "",
+  });
 
   useEffect(() => {
     if (account) {
@@ -31,6 +43,7 @@ export default function BuyerPanel({ account, chainId }) {
     if (!account) return;
 
     setLoadingShipments(true);
+    setLoadingOrders(true);
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const registry = getContract(
@@ -58,15 +71,15 @@ export default function BuyerPanel({ account, chainId }) {
           const shipment = await registry.getShipment(id);
 
           if (shipment.buyer.toLowerCase() === account.toLowerCase()) {
+            const latestCid = shipment.metadataCids.length > 0 ? shipment.metadataCids[shipment.metadataCids.length - 1] : "";
             return {
               id: id.toString(),
               shipper: shipment.shipper,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
-              warehouse: shipment.warehouse,
               milestoneStatus: Number(shipment.status),
-              metadataCid: shipment.metadataCid,
-              timestamp: Number(shipment.timestamp),
+              metadataCid: latestCid,
+              timestamp: Number(shipment.createdAt),
             };
           }
           return null;
@@ -74,11 +87,39 @@ export default function BuyerPanel({ account, chainId }) {
       );
 
       setShipments(shipmentsData.filter((s) => s !== null));
+
+      // Load my orders from logs
+      try {
+        const iface = new ethers.Interface(ShipmentRegistryABI.abi);
+        const topic = iface.getEvent("OrderCreated").topicHash;
+        const logs = await provider.getLogs({
+          address: (await registry.getAddress()),
+          topics: [topic, null, null],
+          fromBlock: "0x0",
+          toBlock: "latest",
+        });
+        const myOrders = logs
+          .map((l) => {
+            const ev = iface.decodeEventLog("OrderCreated", l.data, l.topics);
+            const orderId = ev.orderId.toString();
+            const buyer = ev.buyer;
+            const cid = ev.orderCid;
+            const timestamp = Number(ev.timestamp);
+            return { orderId, buyer, cid, timestamp };
+          })
+          .filter((o) => o.buyer.toLowerCase() === account.toLowerCase())
+          .reverse();
+        setOrders(myOrders);
+      } catch (e) {
+        console.warn("Load orders failed", e);
+        setOrders([]);
+      }
     } catch (err) {
       console.error("Error loading buyer data:", err);
       setError(parseContractError(err));
     } finally {
       setLoadingShipments(false);
+      setLoadingOrders(false);
     }
   };
 
@@ -104,6 +145,67 @@ export default function BuyerPanel({ account, chainId }) {
     } catch (err) {
       console.log("No escrow found for this shipment");
       setEscrowDetails(null);
+    }
+  };
+
+  const handleOrderInput = (e) => {
+    const { name, value } = e.target;
+    setOrderForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const createOrder = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setTxHash("");
+
+    const { productName, origin, destination, quantity } = orderForm;
+    if (!productName || !origin || !destination) {
+      setError("Please fill required order fields");
+      return;
+    }
+    if (!quantity) {
+      setError("Please provide quantity");
+      return;
+    }
+
+    try {
+      // Upload order metadata to IPFS if configured; otherwise embed minimal JSON
+      let orderCid = "";
+      const data = {
+        ...orderForm,
+        version: "1.0",
+        createdAt: new Date().toISOString(),
+        buyer: account,
+      };
+      if (isPinataConfigured()) {
+        const res = await uploadJSONToIPFS(data, `order-${Date.now()}.json`);
+        orderCid = res.cid;
+      } else {
+        // As a fallback require manual CID entry is not ideal; embed JSON as CID-like string is not possible.
+        // Force config to proceed
+        setError("Pinata chưa cấu hình. Vui lòng thêm VITE_PINATA_* để tạo order");
+        return;
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract("ShipmentRegistry", ShipmentRegistryABI.abi, signer, chainId);
+
+      const receipt = await handleTransaction(
+        () => registry.createOrder(orderCid),
+        async (receipt) => {
+          setSuccess("Order created successfully!");
+          setTxHash(receipt.hash);
+          setOrderForm({ productName: "", origin: "", destination: "", quantity: "", notes: "" });
+          await loadBuyerData();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+      console.log("Order tx:", receipt);
+    } catch (err) {
+      console.error("Create order error:", err);
+      setError(parseContractError(err));
     }
   };
 
@@ -267,7 +369,25 @@ export default function BuyerPanel({ account, chainId }) {
   };
 
   const confirmDelivery = async () => {
-    if (!selectedShipment) return;
+    if (!selectedShipment) {
+      setError("Please select a shipment first");
+      return;
+    }
+
+    // Pre-checks to avoid contract reverts
+    if (selectedShipment.milestoneStatus !== 3) {
+      setError(
+        "Shipment must be ARRIVED before confirming delivery."
+      );
+      return;
+    }
+
+    if (!escrowDetails || !escrowDetails.isActive) {
+      setError(
+        "Escrow must be active to release payment. Please open or activate escrow first."
+      );
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -283,9 +403,29 @@ export default function BuyerPanel({ account, chainId }) {
         signer,
         chainId
       );
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
 
-      const receipt = await handleTransaction(
-        () => escrow.release(selectedShipment.id, 4), // Milestone 4 = DELIVERED
+      // Step 1: update shipment to DELIVERED (Buyer-only)
+      await handleTransaction(
+        () => registry.updateMilestone(selectedShipment.id, 4),
+        async (receipt) => {
+          console.log("Shipment moved to DELIVERED", receipt.hash);
+          // Refresh local shipment state after milestone change
+          await loadBuyerData();
+        },
+        (errorMsg) => {
+          setError(parseContractError({ message: errorMsg }));
+        }
+      );
+
+      // Step 2: release escrow for milestone 4
+      const receipt2 = await handleTransaction(
+        () => escrow.release(selectedShipment.id, 4),
         async (receipt) => {
           setSuccess("Delivery confirmed! Payment released to carrier.");
           setTxHash(receipt.hash);
@@ -296,8 +436,7 @@ export default function BuyerPanel({ account, chainId }) {
           setError(parseContractError({ message: errorMsg }));
         }
       );
-
-      console.log("Release receipt:", receipt);
+      console.log("Release receipt:", receipt2);
     } catch (err) {
       console.error("Error confirming delivery:", err);
       setError(parseContractError(err));
@@ -318,6 +457,61 @@ export default function BuyerPanel({ account, chainId }) {
 
   return (
     <div className="buyer-panel">
+      <div className="panel-header">
+        <h2>Create Order</h2>
+        <p className="subtitle">Buyer tạo đơn hàng: Tên hàng và số lượng (Shippe r sẽ nhập cân nặng)</p>
+      </div>
+
+      <form onSubmit={createOrder} className="open-escrow-form" style={{ marginBottom: 24 }}>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Product Name <span className="required">*</span></label>
+            <input name="productName" className="form-input" value={orderForm.productName} onChange={handleOrderInput} placeholder="Tên hàng hóa" />
+          </div>
+          <div className="form-group">
+            <label>Origin <span className="required">*</span></label>
+            <input name="origin" className="form-input" value={orderForm.origin} onChange={handleOrderInput} placeholder="TP.HCM, VN" />
+          </div>
+          <div className="form-group">
+            <label>Destination <span className="required">*</span></label>
+            <input name="destination" className="form-input" value={orderForm.destination} onChange={handleOrderInput} placeholder="Hà Nội, VN" />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Quantity <span className="required">*</span></label>
+            <input name="quantity" type="number" className="form-input" value={orderForm.quantity} onChange={handleOrderInput} placeholder="10" />
+          </div>
+          <div className="form-group">
+            <label>Notes</label>
+            <input name="notes" className="form-input" value={orderForm.notes} onChange={handleOrderInput} placeholder="Yêu cầu đóng gói, bảo hiểm..." />
+          </div>
+        </div>
+        <button type="submit" className="submit-button" disabled={loadingOrders}>{loadingOrders ? "Processing..." : "Create Order"}</button>
+      </form>
+
+      <div className="panel-header" style={{ marginTop: 8 }}>
+        <h3>My Orders ({orders.length})</h3>
+      </div>
+      <div className="shipments-grid" style={{ marginBottom: 24 }}>
+        {loadingOrders ? (
+          <p>Loading orders...</p>
+        ) : orders.length === 0 ? (
+          <div className="empty-state"><p>No orders yet</p></div>
+        ) : (
+          orders.map((o) => (
+            <div key={o.orderId} className="shipment-card">
+              <div className="card-header">
+                <h4>Order #{o.orderId}</h4>
+              </div>
+              <div className="card-body">
+                <p><strong>Created:</strong> {new Date(o.timestamp * 1000).toLocaleString()}</p>
+                <a href={getIPFSUrl(o.cid)} className="metadata-link" target="_blank" rel="noreferrer">View Order</a>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
       <div className="panel-header">
         <h2>Manage Escrow</h2>
         <p className="subtitle">
@@ -434,77 +628,29 @@ export default function BuyerPanel({ account, chainId }) {
                 </div>
 
                 <div className="escrow-actions">
-                  <div className="form-group">
-                    <label htmlFor="depositAmount">
-                      Additional Deposit Amount (LOGI)
-                    </label>
-                    <input
-                      type="number"
-                      id="depositAmount"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      placeholder="100"
-                      step="0.01"
-                      className="form-input"
-                    />
-                  </div>
-
-                  <button
-                    onClick={depositToEscrow}
-                    disabled={loading || !depositAmount}
-                    className="action-button"
-                  >
-                    {loading ? "Processing..." : "Deposit More"}
-                  </button>
-
-                  {selectedShipment.milestoneStatus === 4 &&
-                    !escrowDetails.isCompleted && (
-                      <button
-                        onClick={confirmDelivery}
-                        disabled={loading}
-                        className="action-button primary"
-                      >
-                        {loading
-                          ? "Processing..."
-                          : "Confirm Delivery & Release Payment"}
-                      </button>
-                    )}
+                  {/* Auto-escrow enabled: hide manual deposit/open forms */}
+                  {selectedShipment.milestoneStatus === 3 && (
+                    <button
+                      onClick={confirmDelivery}
+                      disabled={loading}
+                      className="action-button primary"
+                    >
+                      {loading
+                        ? "Processing..."
+                        : "Confirm Delivery & Release Payment"}
+                    </button>
+                  )}
+                  {selectedShipment.milestoneStatus !== 3 && (
+                    <p className="hint" style={{ marginTop: 8 }}>
+                      Escrow is active and funded automatically. Wait until shipment ARRIVED to confirm delivery.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
               <div className="no-escrow">
-                <p>No escrow opened for this shipment yet.</p>
-
-                <form onSubmit={openEscrow} className="open-escrow-form">
-                  <div className="form-group">
-                    <label htmlFor="initialAmount">
-                      Initial Deposit Amount (LOGI){" "}
-                      <span className="required">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      id="initialAmount"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      placeholder="1000"
-                      step="0.01"
-                      required
-                      className="form-input"
-                    />
-                    <p className="hint">
-                      This will be distributed: 30% at pickup, 30% in transit,
-                      20% at arrival, 20% at delivery
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || !depositAmount}
-                    className="submit-button"
-                  >
-                    {loading ? "Opening Escrow..." : "Open Escrow"}
-                  </button>
-                </form>
+                <p>Escrow not found yet. If auto-escrow is enabled, it will be created at shipment creation with shipping fee.</p>
+                <p className="hint">Please refresh shipments or contact support if this persists.</p>
               </div>
             )}
 

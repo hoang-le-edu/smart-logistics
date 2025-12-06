@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import ShipperPanel from "./pages/ShipperPanel";
 import CarrierPanel from "./pages/CarrierPanel";
 import BuyerPanel from "./pages/BuyerPanel";
+import AdminPanel from "./pages/AdminPanel";
 import "./App.css";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
     { id: "shipper", label: "Shipper Panel", icon: "📦" },
     { id: "carrier", label: "Carrier Panel", icon: "🚚" },
     { id: "buyer", label: "Buyer Panel", icon: "💰" },
+    { id: "admin", label: "Admin Panel", icon: "🛡️" },
   ];
 
   return (
@@ -63,6 +65,9 @@ function App() {
           )}
           {activeTab === "buyer" && (
             <BuyerPanel account={account} chainId={chainId} />
+          )}
+          {activeTab === "admin" && (
+            <AdminPanel account={account} chainId={chainId} />
           )}
         </div>
       </main>
