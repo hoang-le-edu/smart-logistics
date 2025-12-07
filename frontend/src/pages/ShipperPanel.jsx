@@ -18,6 +18,8 @@ export default function ShipperPanel({ account, chainId }) {
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [useAutoEscrow, setUseAutoEscrow] = useState(true);
+  const [createWithoutOrder, setCreateWithoutOrder] = useState(false);
   const [formData, setFormData] = useState({
     description: "",
     origin: "",
@@ -25,6 +27,7 @@ export default function ShipperPanel({ account, chainId }) {
     weight: "",
     items: "",
     shippingFee: "",
+    manualBuyerAddress: "",
   });
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -52,36 +55,54 @@ export default function ShipperPanel({ account, chainId }) {
     setLoadingOrders(true);
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const registry = getContract("ShipmentRegistry", ShipmentRegistryABI.abi, provider, chainId);
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        provider,
+        chainId
+      );
       const iface = new ethers.Interface(ShipmentRegistryABI.abi);
       const topic = iface.getEvent("OrderCreated").topicHash;
       const logs = await provider.getLogs({
-        address: (await registry.getAddress()),
+        address: await registry.getAddress(),
         topics: [topic],
         fromBlock: "0x0",
         toBlock: "latest",
       });
-      const list = logs.map((l) => {
-        const ev = iface.decodeEventLog("OrderCreated", l.data, l.topics);
-        return {
-          orderId: ev.orderId.toString(),
-          buyer: ev.buyer,
-          cid: ev.orderCid,
-          timestamp: Number(ev.timestamp),
-        };
-      }).reverse();
+      const list = logs
+        .map((l) => {
+          const ev = iface.decodeEventLog("OrderCreated", l.data, l.topics);
+          return {
+            orderId: ev.orderId.toString(),
+            buyer: ev.buyer,
+            cid: ev.orderCid,
+            timestamp: Number(ev.timestamp),
+          };
+        })
+        .reverse();
       // Load order details from IPFS to enable fallback matching
       const orderDetails = new Map(); // cid -> { buyer, origin, destination, productName, sig }
       const orderSignatureToCid = new Map(); // signature -> cid
       for (const o of list) {
         try {
           const d = await retrieveFromIPFS(o.cid);
-          const productName = (d?.productName || d?.description || "").toString();
+          const productName = (
+            d?.productName ||
+            d?.description ||
+            ""
+          ).toString();
           const origin = (d?.origin || "").toString();
           const destination = (d?.destination || "").toString();
           const buyerLower = o.buyer.toLowerCase();
-          const sig = `${buyerLower}|${origin}|${destination}|${productName}`.toLowerCase();
-          orderDetails.set(o.cid, { buyer: buyerLower, origin, destination, productName, sig });
+          const sig =
+            `${buyerLower}|${origin}|${destination}|${productName}`.toLowerCase();
+          orderDetails.set(o.cid, {
+            buyer: buyerLower,
+            origin,
+            destination,
+            productName,
+            sig,
+          });
           orderSignatureToCid.set(sig, o.cid);
         } catch (_) {
           // ignore fetch issues
@@ -93,14 +114,22 @@ export default function ShipperPanel({ account, chainId }) {
         const total = Number(await registry.getTotalShipments());
         for (let i = 0; i < total; i++) {
           const s = await registry.getShipment(i);
-          const lastCid = s.metadataCids.length > 0 ? s.metadataCids[s.metadataCids.length - 1] : "";
+          const lastCid =
+            s.metadataCids.length > 0
+              ? s.metadataCids[s.metadataCids.length - 1]
+              : "";
           if (!lastCid) continue;
           try {
             const meta = await retrieveFromIPFS(lastCid);
             let ocid = meta?.orderCid;
             if (ocid) {
               const existing = orderStatusMap.get(ocid);
-              const candidate = { status: Number(s.status), updatedAt: Number(s.updatedAt), shipmentId: Number(s.id ?? i), metadataCid: lastCid };
+              const candidate = {
+                status: Number(s.status),
+                updatedAt: Number(s.updatedAt),
+                shipmentId: Number(s.id ?? i),
+                metadataCid: lastCid,
+              };
               if (!existing || candidate.updatedAt > existing.updatedAt) {
                 orderStatusMap.set(ocid, candidate);
               }
@@ -110,11 +139,17 @@ export default function ShipperPanel({ account, chainId }) {
               const origin = (meta?.origin || "").toString();
               const destination = (meta?.destination || "").toString();
               const description = (meta?.description || "").toString();
-              const sig2 = `${buyerLower}|${origin}|${destination}|${description}`.toLowerCase();
+              const sig2 =
+                `${buyerLower}|${origin}|${destination}|${description}`.toLowerCase();
               const matchedCid = orderSignatureToCid.get(sig2);
               if (matchedCid) {
                 const existing = orderStatusMap.get(matchedCid);
-                const candidate = { status: Number(s.status), updatedAt: Number(s.updatedAt), shipmentId: Number(s.id ?? i), metadataCid: lastCid };
+                const candidate = {
+                  status: Number(s.status),
+                  updatedAt: Number(s.updatedAt),
+                  shipmentId: Number(s.id ?? i),
+                  metadataCid: lastCid,
+                };
                 if (!existing || candidate.updatedAt > existing.updatedAt) {
                   orderStatusMap.set(matchedCid, candidate);
                 }
@@ -134,11 +169,20 @@ export default function ShipperPanel({ account, chainId }) {
         let hasShipment = false;
         if (s) {
           hasShipment = true;
-          statusText = Number(s.status) === 0 ? "Pending Confirmation" : getMilestoneStatusName(s.status);
+          statusText =
+            Number(s.status) === 0
+              ? "Pending Confirmation"
+              : getMilestoneStatusName(s.status);
         } else {
           statusText = "Open";
         }
-        return { ...o, status: statusText, hasShipment, shipmentId: s?.shipmentId, shipmentMetadataCid: s?.metadataCid };
+        return {
+          ...o,
+          status: statusText,
+          hasShipment,
+          shipmentId: s?.shipmentId,
+          shipmentMetadataCid: s?.metadataCid,
+        };
       });
       setOrders(withStatus);
     } catch (e) {
@@ -241,14 +285,31 @@ export default function ShipperPanel({ account, chainId }) {
         chainId
       );
 
+      // Determine buyer address
+      const buyerAddress = createWithoutOrder
+        ? formData.manualBuyerAddress
+        : selectedOrder.buyer;
+
+      if (!buyerAddress || !ethers.isAddress(buyerAddress)) {
+        setError("Valid buyer address is required");
+        setLoading(false);
+        return;
+      }
+
+      // Determine escrow amount based on toggle
+      const shippingFeeParam =
+        useAutoEscrow && formData.shippingFee
+          ? ethers.parseEther(String(formData.shippingFee))
+          : 0n;
+
       const receipt = await handleTransaction(
         () =>
           registry.createShipment(
-            selectedOrder.buyer,
+            buyerAddress,
             metadataCid,
             initialDocumentCids,
             initialDocumentTypes,
-            formData.shippingFee ? ethers.parseEther(String(formData.shippingFee)) : 0n
+            shippingFeeParam
           ),
         (receipt) => {
           setSuccess(`Shipment created successfully!`);
@@ -299,7 +360,9 @@ export default function ShipperPanel({ account, chainId }) {
         {loadingOrders ? (
           <p>Loading orders...</p>
         ) : orders.length === 0 ? (
-          <div className="empty-state"><p>No orders available</p></div>
+          <div className="empty-state">
+            <p>No orders available</p>
+          </div>
         ) : (
           orders.map((o) => (
             <div key={o.orderId} className="shipment-card">
@@ -307,15 +370,42 @@ export default function ShipperPanel({ account, chainId }) {
                 <h4>Order #{o.orderId}</h4>
               </div>
               <div className="card-body">
-                <p><strong>Buyer:</strong> {o.buyer.slice(0,10)}...</p>
-                <p><strong>Created:</strong> {new Date(o.timestamp * 1000).toLocaleString()}</p>
-                <p><strong>Status:</strong> {o.status || "Open"}</p>
+                <p>
+                  <strong>Buyer:</strong> {o.buyer.slice(0, 10)}...
+                </p>
+                <p>
+                  <strong>Created:</strong>{" "}
+                  {new Date(o.timestamp * 1000).toLocaleString()}
+                </p>
+                <p>
+                  <strong>Status:</strong> {o.status || "Open"}
+                </p>
                 <div className="flex" style={{ gap: 8 }}>
-                  <a href={getIPFSUrl(o.cid)} className="metadata-link" target="_blank" rel="noreferrer">View</a>
+                  <a
+                    href={getIPFSUrl(o.cid)}
+                    className="metadata-link"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View
+                  </a>
                   {o.hasShipment ? (
-                    <a href={getIPFSUrl(o.shipmentMetadataCid)} className="metadata-link" target="_blank" rel="noreferrer">View Shipment</a>
+                    <a
+                      href={getIPFSUrl(o.shipmentMetadataCid)}
+                      className="metadata-link"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View Shipment
+                    </a>
                   ) : (
-                    <button type="button" className="action-button" onClick={() => prefillFromOrder(o)}>Prefill</button>
+                    <button
+                      type="button"
+                      className="action-button"
+                      onClick={() => prefillFromOrder(o)}
+                    >
+                      Prefill
+                    </button>
                   )}
                 </div>
               </div>
@@ -335,19 +425,72 @@ export default function ShipperPanel({ account, chainId }) {
           <h3>Participant Addresses</h3>
 
           <div className="form-group">
-            <label>
-              Selected Order / Buyer <span className="required">*</span>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={createWithoutOrder}
+                onChange={(e) => {
+                  setCreateWithoutOrder(e.target.checked);
+                  if (e.target.checked) setSelectedOrder(null);
+                }}
+              />
+              Create shipment without selecting an order
             </label>
-            <div className="form-input" style={{ display: 'flex', alignItems: 'center', justifyContent:'space-between' }}>
-              <span style={{ color: '#000' }}>{selectedOrder ? `${selectedOrder.buyer.slice(0,10)}...` : 'No order selected'}</span>
-              <button type="button" className="action-button" onClick={() => loadOpenOrders()}>Refresh</button>
-            </div>
-            {!selectedOrder && (
-              <p className="hint warning">Vui lòng chọn một Order ở trên và bấm Prefill</p>
-            )}
+            <p className="hint">
+              Check this to create ad-hoc shipment with manual buyer address
+            </p>
           </div>
 
-          {/* Warehouse removed from contract; no input here */}
+          {!createWithoutOrder ? (
+            <div className="form-group">
+              <label>
+                Selected Order / Buyer <span className="required">*</span>
+              </label>
+              <div
+                className="form-input"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span style={{ color: "#000" }}>
+                  {selectedOrder
+                    ? `${selectedOrder.buyer.slice(0, 10)}...`
+                    : "No order selected"}
+                </span>
+                <button
+                  type="button"
+                  className="action-button"
+                  onClick={() => loadOpenOrders()}
+                >
+                  Refresh
+                </button>
+              </div>
+              {!selectedOrder && (
+                <p className="hint warning">
+                  Vui lòng chọn một Order ở trên và bấm Prefill
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="form-group">
+              <label htmlFor="manualBuyerAddress">
+                Buyer Address <span className="required">*</span>
+              </label>
+              <input
+                type="text"
+                id="manualBuyerAddress"
+                name="manualBuyerAddress"
+                value={formData.manualBuyerAddress}
+                onChange={handleInputChange}
+                placeholder="0x..."
+                required={createWithoutOrder}
+                className="form-input"
+              />
+              <p className="hint">Enter the buyer's wallet address</p>
+            </div>
+          )}
         </div>
 
         <div className="form-section">
@@ -445,7 +588,21 @@ export default function ShipperPanel({ account, chainId }) {
                 step="0.01"
                 className="form-input"
               />
-              <p className="hint">Buyer sẽ được auto-mint LOGI tương ứng khi tạo shipment</p>
+              <div className="form-group" style={{ marginTop: 12 }}>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={useAutoEscrow}
+                    onChange={(e) => setUseAutoEscrow(e.target.checked)}
+                  />
+                  Auto-open Escrow (Auto-mint LOGI tokens)
+                </label>
+                <p className="hint">
+                  {useAutoEscrow
+                    ? "✓ Escrow will be opened automatically with calculated shipping fee. Buyer will receive auto-minted LOGI tokens."
+                    : "⚠ Buyer will need to manually open escrow and deposit tokens after shipment creation."}
+                </p>
+              </div>
             </div>
           </div>
 

@@ -31,6 +31,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     bytes32 public constant SHIPPER_ROLE = keccak256("SHIPPER_ROLE");
     bytes32 public constant CARRIER_ROLE = keccak256("CARRIER_ROLE");
     bytes32 public constant BUYER_ROLE = keccak256("BUYER_ROLE");
+    bytes32 public constant PACKER_ROLE = keccak256("PACKER_ROLE");
 
     enum MilestoneStatus {
         CREATED,        // 0: Shipment created
@@ -38,7 +39,8 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         IN_TRANSIT,     // 2: In transit
         ARRIVED,        // 3: Arrived at destination
         DELIVERED,      // 4: Delivered to buyer
-        CANCELED        // 5: Shipment canceled
+        CANCELED,       // 5: Shipment canceled
+        FAILED          // 6: Shipment failed, refund buyer
     }
 
     struct Shipment {
@@ -91,6 +93,11 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         uint256 timestamp
     );
     
+    event CarrierAssigned(
+        uint256 indexed shipmentId,
+        address indexed carrier
+    );
+    
     event DocumentAttached(
         uint256 indexed shipmentId,
         string docType,
@@ -99,9 +106,17 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         uint256 timestamp
     );
 
+    event ShipmentFailed(
+        uint256 indexed shipmentId,
+        address indexed carrier,
+        string reason,
+        uint256 timestamp
+    );
+
     // Escrow contract reference to enforce pickup guard
     address public escrowContract;
     address public logiToken;
+    address private _adminAddress;
 
     // Base origin point for distance calculation (latitude, longitude as fixed-point numbers)
     // Stored as integers: actual_value * 1e6 (e.g., 21.0285 -> 21028500)
@@ -132,6 +147,21 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     function setLogiToken(address _addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_addr != address(0), "Invalid token address");
         logiToken = _addr;
+    }
+
+    /**
+     * @dev Set admin address for payment recipient (admin only)
+     */
+    function setAdmin(address _addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_addr != address(0), "Invalid admin address");
+        _adminAddress = _addr;
+    }
+
+    /**
+     * @dev Get admin address (used by EscrowMilestone)
+     */
+    function getAdmin() external view returns (address) {
+        return _adminAddress;
     }
 
     /**
@@ -360,7 +390,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         require(target <= uint256(MilestoneStatus.DELIVERED), "Invalid status");
 
         if (newStatus == MilestoneStatus.PICKED_UP) {
-            require(hasRole(SHIPPER_ROLE, msg.sender) && msg.sender == shipment.shipper, "Shipper only");
+            require(hasRole(PACKER_ROLE, msg.sender), "Packer only");
         } else if (newStatus == MilestoneStatus.IN_TRANSIT || newStatus == MilestoneStatus.ARRIVED) {
             require(hasRole(CARRIER_ROLE, msg.sender) && msg.sender == shipment.carrier, "Carrier only");
         } else if (newStatus == MilestoneStatus.DELIVERED) {
@@ -373,8 +403,8 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @dev Carrier nhận hàng: gán địa chỉ carrier và chuyển CREATED -> PICKED_UP
-     * Chỉ gọi được bởi ví có CARRIER_ROLE. Nếu shipment đã có carrier hoặc không ở trạng thái CREATED sẽ bị từ chối.
+     * @dev Carrier nhận hàng: gán địa chỉ carrier NHƯNG KHÔNG chuyển status
+     * Packer sẽ gọi updateMilestone(shipmentId, PICKED_UP) sau khi đóng gói xong
      */
     
     function acceptShipment(uint256 shipmentId) external nonReentrant onlyRole(CARRIER_ROLE) {
@@ -383,20 +413,19 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         require(shipment.status == MilestoneStatus.CREATED, "Not in CREATED");
         require(shipment.carrier == address(0) || shipment.carrier == msg.sender, "Carrier already set");
 
-        // Guard: require escrow active by buyer before pickup
+        // Guard: require escrow active by buyer before carrier accepts
         require(escrowContract != address(0), "Escrow not set");
         IEscrowMilestone.Escrow memory esc = IEscrowMilestone(escrowContract).getEscrowDetails(shipmentId);
         require(esc.isActive, "Escrow inactive");
         require(esc.buyer == shipment.buyer, "Escrow not opened by buyer");
 
         shipment.carrier = msg.sender;
-        shipment.status = MilestoneStatus.PICKED_UP;
         shipment.updatedAt = block.timestamp;
 
         // Track shipment for this carrier if it was empty before
         _shipmentsByAddress[msg.sender].push(shipmentId);
 
-        emit MilestoneUpdated(shipmentId, MilestoneStatus.PICKED_UP, block.timestamp);
+        emit CarrierAssigned(shipmentId, msg.sender);
     }
 
     /**
@@ -437,6 +466,45 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     }
 
     /**
+     * @dev Carrier marks shipment as FAILED (triggers buyer refund)
+     * @param shipmentId ID of the shipment
+     * @param reason Failure reason
+     * @param evidenceType Type of evidence document
+     * @param evidenceCid IPFS CID of evidence
+     */
+    function failShipment(
+        uint256 shipmentId,
+        string calldata reason,
+        string calldata evidenceType,
+        string calldata evidenceCid
+    ) external nonReentrant onlyRole(CARRIER_ROLE) {
+        Shipment storage shipment = _shipments[shipmentId];
+        require(shipment.id == shipmentId, "Shipment does not exist");
+        require(msg.sender == shipment.carrier, "Only assigned carrier");
+        require(shipment.status == MilestoneStatus.IN_TRANSIT || shipment.status == MilestoneStatus.ARRIVED, "Invalid status");
+        require(bytes(reason).length > 0, "Failure reason required");
+
+        shipment.status = MilestoneStatus.FAILED;
+        shipment.updatedAt = block.timestamp;
+
+        // Record failure reason
+        shipment.metadataCids.push(reason);
+
+        // Attach evidence document
+        if (bytes(evidenceCid).length > 0) {
+            _documents[shipmentId].push(Document({
+                docType: evidenceType,
+                cid: evidenceCid,
+                uploadedBy: msg.sender,
+                timestamp: block.timestamp
+            }));
+        }
+
+        emit ShipmentFailed(shipmentId, msg.sender, reason, block.timestamp);
+        emit MilestoneUpdated(shipmentId, MilestoneStatus.FAILED, block.timestamp);
+    }
+
+    /**
      * @dev Attach a document (IPFS CID) to a shipment
      * @param shipmentId ID of the shipment
      * @param docType Type or name of the document
@@ -452,7 +520,8 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         require(
             msg.sender == shipment.shipper ||
             msg.sender == shipment.carrier ||
-            msg.sender == shipment.buyer,
+            msg.sender == shipment.buyer ||
+            hasRole(PACKER_ROLE, msg.sender),
             "Not authorized to attach documents"
         );
         require(bytes(documentCid).length > 0, "Document CID required");
@@ -565,5 +634,35 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
      */
     function grantBuyerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
         grantRole(BUYER_ROLE, account);
+    }
+
+    /**
+     * @dev Grant PACKER_ROLE
+     */
+    function grantPackerRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(PACKER_ROLE, account);
+    }
+
+    /**
+     * @dev Mark shipment as failed (CARRIER_ROLE only)
+     * @param shipmentId ID of the shipment
+     * @param reason Reason for failure
+     */
+    function markShipmentFailed(uint256 shipmentId, string calldata reason) 
+        external 
+        onlyRole(CARRIER_ROLE) 
+        nonReentrant 
+    {
+        Shipment storage shipment = _shipments[shipmentId];
+        require(shipment.id == shipmentId, "Shipment does not exist");
+        require(shipment.status != MilestoneStatus.DELIVERED, "Already delivered");
+        require(shipment.status != MilestoneStatus.FAILED, "Already failed");
+        require(shipment.status != MilestoneStatus.CANCELED, "Already canceled");
+        
+        shipment.status = MilestoneStatus.FAILED;
+        shipment.updatedAt = block.timestamp;
+        
+        emit MilestoneUpdated(shipmentId, MilestoneStatus.FAILED, block.timestamp);
+        emit ShipmentFailed(shipmentId, msg.sender, reason, block.timestamp);
     }
 }

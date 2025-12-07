@@ -34,7 +34,8 @@ export default function CarrierPanel({ account, chainId }) {
     { value: 2, label: "In Transit", canSetFrom: [1] },
     { value: 3, label: "Arrived at Destination", canSetFrom: [2] },
     { value: 4, label: "Delivered", canSetFrom: [3] },
-    { value: 5, label: "Cancel", canSetFrom: [0,1,2,3] },
+    { value: 5, label: "Cancel", canSetFrom: [0, 1, 2, 3] },
+    { value: 6, label: "Failed (Refund Buyer)", canSetFrom: [1, 2, 3] },
   ];
 
   useEffect(() => {
@@ -65,7 +66,10 @@ export default function CarrierPanel({ account, chainId }) {
 
           // Only include shipments where account is carrier
           if (shipment.carrier.toLowerCase() === account.toLowerCase()) {
-            const latestCid = shipment.metadataCids.length > 0 ? shipment.metadataCids[shipment.metadataCids.length - 1] : "";
+            const latestCid =
+              shipment.metadataCids.length > 0
+                ? shipment.metadataCids[shipment.metadataCids.length - 1]
+                : "";
             return {
               id: id.toString(),
               shipper: shipment.shipper,
@@ -109,7 +113,10 @@ export default function CarrierPanel({ account, chainId }) {
           const isUnassigned = s.carrier === ethers.ZeroAddress;
           const isCreated = Number(s.status) === 0; // CREATED
           if (isUnassigned && isCreated) {
-            const latestCid = s.metadataCids.length > 0 ? s.metadataCids[s.metadataCids.length - 1] : "";
+            const latestCid =
+              s.metadataCids.length > 0
+                ? s.metadataCids[s.metadataCids.length - 1]
+                : "";
             list.push({
               id: i.toString(),
               shipper: s.shipper,
@@ -147,7 +154,9 @@ export default function CarrierPanel({ account, chainId }) {
       return;
     }
 
-    if (!canUpdateMilestone(selectedShipment.milestoneStatus, selectedMilestone)) {
+    if (
+      !canUpdateMilestone(selectedShipment.milestoneStatus, selectedMilestone)
+    ) {
       setError(
         `Cannot update from ${getMilestoneStatusName(
           selectedShipment.milestoneStatus
@@ -159,6 +168,12 @@ export default function CarrierPanel({ account, chainId }) {
     // Cancel path requires reason
     if (selectedMilestone === 5 && !cancelReason.trim()) {
       setError("Cancel reason is required");
+      return;
+    }
+
+    // Failed path requires reason
+    if (selectedMilestone === 6 && !cancelReason.trim()) {
+      setError("Failure reason is required");
       return;
     }
 
@@ -194,21 +209,40 @@ export default function CarrierPanel({ account, chainId }) {
       const receipt = await handleTransaction(
         () =>
           selectedMilestone === 5
-            ? registry.cancelShipment(selectedShipment.id, cancelReason.trim(), "", "")
+            ? registry.cancelShipment(
+                selectedShipment.id,
+                cancelReason.trim(),
+                "",
+                ""
+              )
+            : selectedMilestone === 6
+            ? registry.markShipmentFailed(
+                selectedShipment.id,
+                cancelReason.trim()
+              )
             : registry.updateMilestone(selectedShipment.id, selectedMilestone),
         async (receipt) => {
           setSuccess(
             selectedMilestone === 5
               ? "Shipment canceled successfully"
-              : `Milestone updated to ${getMilestoneStatusName(selectedMilestone)}!`
+              : selectedMilestone === 6
+              ? "Shipment marked as failed - Buyer will be refunded"
+              : `Milestone updated to ${getMilestoneStatusName(
+                  selectedMilestone
+                )}!`
           );
           setTxHash(receipt.hash);
 
           // Step 3: Attach proof document if available
-          if (proofCid && selectedMilestone !== 5) {
+          if (proofCid && selectedMilestone !== 5 && selectedMilestone !== 6) {
             try {
               await handleTransaction(
-                () => registry.attachDocument(selectedShipment.id, "Proof", proofCid),
+                () =>
+                  registry.attachDocument(
+                    selectedShipment.id,
+                    "Proof",
+                    proofCid
+                  ),
                 () => {
                   console.log("Proof document attached to shipment");
                 },
@@ -272,7 +306,9 @@ export default function CarrierPanel({ account, chainId }) {
         }
       } catch (_) {
         // If escrow contract not found or no details, block pickup
-        setError("Escrow not found or inactive. Ask buyer to open escrow first.");
+        setError(
+          "Escrow not found or inactive. Ask buyer to open escrow first."
+        );
         setLoading(false);
         return;
       }
@@ -289,6 +325,40 @@ export default function CarrierPanel({ account, chainId }) {
       );
     } catch (err) {
       console.error("Accept shipment error:", err);
+      setError(parseContractError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markShipmentFailed = async (shipmentId, reason) => {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    setTxHash("");
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      await handleTransaction(
+        () => registry.markShipmentFailed(shipmentId, reason),
+        async (receipt) => {
+          setSuccess(
+            `Shipment #${shipmentId} marked as failed. Buyer will be refunded.`
+          );
+          setTxHash(receipt.hash);
+          await loadCarrierShipments();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Mark failed error:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -344,9 +414,16 @@ export default function CarrierPanel({ account, chainId }) {
                     <span className={`status-badge status-0`}>CREATED</span>
                   </div>
                   <div className="card-body">
-                    <p><strong>Shipper:</strong> {s.shipper.slice(0, 10)}...</p>
-                    <p><strong>Buyer:</strong> {s.buyer.slice(0, 10)}...</p>
-                    <p><strong>Created:</strong> {new Date(s.timestamp * 1000).toLocaleDateString()}</p>
+                    <p>
+                      <strong>Shipper:</strong> {s.shipper.slice(0, 10)}...
+                    </p>
+                    <p>
+                      <strong>Buyer:</strong> {s.buyer.slice(0, 10)}...
+                    </p>
+                    <p>
+                      <strong>Created:</strong>{" "}
+                      {new Date(s.timestamp * 1000).toLocaleDateString()}
+                    </p>
                     {s.metadataCid && (
                       <a
                         href={`https://gateway.pinata.cloud/ipfs/${s.metadataCid}`}
@@ -358,8 +435,17 @@ export default function CarrierPanel({ account, chainId }) {
                       </a>
                     )}
                   </div>
-                  <div className="card-actions" style={{ padding: '8px 16px 16px' }}>
-                    <button className="action-button" disabled={loading} onClick={() => acceptShipment(s.id)}>Accept & Pick Up</button>
+                  <div
+                    className="card-actions"
+                    style={{ padding: "8px 16px 16px" }}
+                  >
+                    <button
+                      className="action-button"
+                      disabled={loading}
+                      onClick={() => acceptShipment(s.id)}
+                    >
+                      Accept & Pick Up
+                    </button>
                   </div>
                 </div>
               ))}
@@ -499,12 +585,14 @@ export default function CarrierPanel({ account, chainId }) {
                   id="proof"
                   onChange={handleFileChange}
                   accept=".pdf,.jpg,.jpeg,.png,.json"
-                    className="form-file"
-                    style={{ color: "#000", backgroundColor: "#fff" }}
+                  className="form-file"
+                  style={{ color: "#000", backgroundColor: "#fff" }}
                 />
-                  <div style={{ marginTop: 6, color: "#000" }}>
-                    {proofFile ? `Selected: ${proofFile.name}` : "No file selected"}
-                  </div>
+                <div style={{ marginTop: 6, color: "#000" }}>
+                  {proofFile
+                    ? `Selected: ${proofFile.name}`
+                    : "No file selected"}
+                </div>
                 {!isPinataConfigured() && (
                   <p className="hint warning">
                     ⚠️ IPFS not configured. Files won't be uploaded.

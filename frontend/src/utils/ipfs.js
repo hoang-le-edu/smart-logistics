@@ -1,10 +1,47 @@
 import axios from "axios";
+import CryptoJS from "crypto-js";
 
 const PINATA_API_KEY = import.meta.env.VITE_PINATA_API_KEY;
 const PINATA_SECRET_KEY = import.meta.env.VITE_PINATA_SECRET_KEY;
 const PINATA_JWT = import.meta.env.VITE_PINATA_JWT;
+const ENCRYPTION_KEY =
+  import.meta.env.VITE_ENCRYPTION_KEY ||
+  "smart-logistics-default-key-2024-change-in-production";
 
 const pinataBaseURL = "https://api.pinata.cloud";
+
+/**
+ * Encrypt data using AES encryption
+ * @param {any} data - Data to encrypt (string, object, etc.)
+ * @returns {string} - Encrypted ciphertext
+ */
+export function encryptData(data) {
+  const jsonString = typeof data === "string" ? data : JSON.stringify(data);
+  return CryptoJS.AES.encrypt(jsonString, ENCRYPTION_KEY).toString();
+}
+
+/**
+ * Decrypt data using AES decryption
+ * @param {string} ciphertext - Encrypted data
+ * @returns {any} - Decrypted original data
+ */
+export function decryptData(ciphertext) {
+  try {
+    const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    if (!decrypted) {
+      throw new Error("Decryption failed - empty result");
+    }
+    try {
+      return JSON.parse(decrypted);
+    } catch {
+      return decrypted; // Return as string if not JSON
+    }
+  } catch (error) {
+    console.error("Decryption error:", error);
+    throw new Error(`Failed to decrypt data: ${error.message}`);
+  }
+}
 
 /**
  * Upload file to IPFS via Pinata
@@ -14,15 +51,23 @@ const pinataBaseURL = "https://api.pinata.cloud";
  */
 export const uploadToIPFS = async (file, filename = null) => {
   try {
+    // Read file content and encrypt it
+    const fileContent = await file.text();
+    const encrypted = encryptData(fileContent);
+    const encryptedBlob = new Blob([encrypted], {
+      type: "application/octet-stream",
+    });
+
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", encryptedBlob, (filename || file.name) + ".enc");
 
     const metadata = JSON.stringify({
-      name: filename || file.name,
+      name: (filename || file.name) + ".enc",
       keyvalues: {
         uploadedAt: new Date().toISOString(),
-        type: file.type,
-        size: file.size,
+        originalType: file.type,
+        originalSize: String(file.size), // Convert to string
+        encrypted: "true", // Convert boolean to string
       },
     });
     formData.append("pinataMetadata", metadata);
@@ -77,6 +122,9 @@ export const uploadJSONToIPFS = async (
   filename = "metadata.json"
 ) => {
   try {
+    // Encrypt JSON data
+    const encrypted = encryptData(jsonData);
+
     const headers = PINATA_JWT
       ? { Authorization: `Bearer ${PINATA_JWT}` }
       : {
@@ -87,7 +135,7 @@ export const uploadJSONToIPFS = async (
     const response = await axios.post(
       `${pinataBaseURL}/pinning/pinJSONToIPFS`,
       {
-        pinataContent: jsonData,
+        pinataContent: { encrypted },
         pinataMetadata: {
           name: filename,
           keyvalues: {
@@ -122,7 +170,7 @@ export const uploadJSONToIPFS = async (
 };
 
 /**
- * Retrieve content from IPFS
+ * Retrieve content from IPFS with automatic decryption
  * @param {string} cid - IPFS CID
  * @returns {Promise<any>}
  */
@@ -131,7 +179,18 @@ export const retrieveFromIPFS = async (cid) => {
     const response = await axios.get(
       `https://gateway.pinata.cloud/ipfs/${cid}`
     );
-    return response.data;
+
+    // Try to decrypt if data has encrypted field
+    try {
+      if (response.data && response.data.encrypted) {
+        return decryptData(response.data.encrypted);
+      }
+      // For old non-encrypted data, return as-is
+      return response.data;
+    } catch (decryptError) {
+      console.warn("Decryption failed, returning raw data:", decryptError);
+      return response.data;
+    }
   } catch (error) {
     console.error("Error retrieving from IPFS:", error);
     throw new Error(`Failed to retrieve from IPFS: ${error.message}`);

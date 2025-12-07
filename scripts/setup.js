@@ -22,15 +22,25 @@ async function main() {
 
   const signers = await hre.ethers.getSigners();
   const admin = signers[0];
-  const shipperAddr = process.env.SHIPPER_ADDRESS || (signers[1] ? signers[1].address : admin.address);
-  const carrierAddr = process.env.CARRIER_ADDRESS || (signers[2] ? signers[2].address : admin.address);
-  const buyerAddr = process.env.BUYER_ADDRESS || (signers[3] ? signers[3].address : admin.address);
+  const shipperAddr =
+    process.env.SHIPPER_ADDRESS ||
+    (signers[1] ? signers[1].address : admin.address);
+  const carrierAddr =
+    process.env.CARRIER_ADDRESS ||
+    (signers[2] ? signers[2].address : admin.address);
+  const buyerAddr =
+    process.env.BUYER_ADDRESS ||
+    (signers[3] ? signers[3].address : admin.address);
+  const packerAddr =
+    process.env.PACKER_ADDRESS ||
+    (signers[4] ? signers[4].address : admin.address);
 
   console.log("Using accounts:");
   console.log("Admin:     ", admin.address);
   console.log("Shipper:   ", shipperAddr);
   console.log("Carrier:   ", carrierAddr);
   console.log("Buyer:     ", buyerAddr);
+  console.log("Packer:    ", packerAddr);
   console.log();
 
   // Get contract instances
@@ -54,6 +64,9 @@ async function main() {
 
   await registry.grantBuyerRole(buyerAddr);
   console.log("✓ Granted BUYER_ROLE to:", buyerAddr);
+
+  await registry.grantPackerRole(packerAddr);
+  console.log("✓ Granted PACKER_ROLE to:", packerAddr);
 
   // Mint tokens to buyer for testing
   console.log("\nMinting tokens to buyer (if MINTER_ROLE available)...");
@@ -80,15 +93,24 @@ async function main() {
 
   // Configure Registry integrations on current network
   console.log("\nConfiguring Registry integrations...");
+  // Set admin address for payment recipient
+  await registry.setAdmin(admin.address);
+  console.log("✓ setAdmin:", admin.address);
   // Set LOGI token address for auto-mint
   await registry.setLogiToken(LogiToken);
   console.log("✓ setLogiToken:", LogiToken);
   // Grant MINTER_ROLE on LogiToken to ShipmentRegistry
   await logiToken.grantMinterRole(ShipmentRegistry);
   console.log("✓ grantMinterRole to ShipmentRegistry:", ShipmentRegistry);
+  // Grant MINTER_ROLE to EscrowMilestone for auto-mint
+  await logiToken.grantMinterRole(EscrowMilestone);
+  console.log("✓ grantMinterRole to EscrowMilestone:", EscrowMilestone);
   // Set Escrow contract for pickup guard
   await registry.setEscrowContract(EscrowMilestone);
   console.log("✓ setEscrowContract:", EscrowMilestone);
+  // Grant REGISTRY_ROLE to ShipmentRegistry on EscrowMilestone
+  await escrow.grantRole(await escrow.REGISTRY_ROLE(), ShipmentRegistry);
+  console.log("✓ grantRole REGISTRY_ROLE to ShipmentRegistry on Escrow");
 
   // Optional: Create a test shipment
   if (process.env.CREATE_TEST_SHIPMENT === "true") {
@@ -144,6 +166,7 @@ async function main() {
   console.log("  SHIPPER:   ", shipperAddr);
   console.log("  CARRIER:   ", carrierAddr);
   console.log("  BUYER:     ", buyerAddr);
+  console.log("  PACKER:    ", packerAddr);
   console.log("\nToken balances:");
   console.log(
     "  Buyer:   ",

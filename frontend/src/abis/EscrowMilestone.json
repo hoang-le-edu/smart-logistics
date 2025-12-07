@@ -1,11 +1,16 @@
 {
-  "address": "0xC9994A2D51B9558A34d240bb28CCB3Ddc549F92E",
+  "address": "0xa452f3B9a12223e4e96571f6eB3b135eA2bdd030",
   "abi": [
     {
       "inputs": [
         {
           "internalType": "address",
           "name": "_token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_registryAddress",
           "type": "address"
         }
       ],
@@ -628,6 +633,19 @@
       "name": "refund",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "registryAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {

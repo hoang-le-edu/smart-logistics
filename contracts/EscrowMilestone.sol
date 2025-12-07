@@ -10,10 +10,15 @@ interface ILogiToken is IERC20 {
     function mint(address to, uint256 amount) external;
 }
 
+interface IShipmentRegistry {
+    function getAdmin() external view returns (address);
+}
+
 /**
  * @title EscrowMilestone
  * @dev Automated milestone-based payment escrow
  * Payment distribution: 30% (Pickup) + 30% (Transit) + 20% (Arrived) + 20% (Delivered)
+ * All payments go to admin address from ShipmentRegistry
  */
 contract EscrowMilestone is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -23,6 +28,7 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
     bytes32 public constant REGISTRY_ROLE = keccak256("REGISTRY_ROLE");
 
     IERC20 public immutable token;
+    address public immutable registryAddress;
 
     struct Escrow {
         uint256 totalAmount;
@@ -76,9 +82,11 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
         uint256 deadline
     );
 
-    constructor(address _token) {
+    constructor(address _token, address _registryAddress) {
         require(_token != address(0), "Invalid token address");
+        require(_registryAddress != address(0), "Invalid registry address");
         token = IERC20(_token);
+        registryAddress = _registryAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
@@ -241,9 +249,11 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
             escrow.isActive = false;
         }
 
-        token.safeTransfer(msg.sender, paymentAmount);
+        // Pay admin instead of carrier
+        address admin = IShipmentRegistry(registryAddress).getAdmin();
+        token.safeTransfer(admin, paymentAmount);
 
-        emit PaymentReleased(shipmentId, msg.sender, paymentAmount, milestone);
+        emit PaymentReleased(shipmentId, admin, paymentAmount, milestone);
     }
 
     /**

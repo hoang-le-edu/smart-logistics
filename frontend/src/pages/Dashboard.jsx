@@ -9,7 +9,7 @@ import {
 } from "../utils/contracts";
 import { getIPFSUrl, retrieveFromIPFS } from "../utils/ipfs";
 
-export default function Dashboard({ account, chainId }) {
+export default function Dashboard({ account, chainId, role }) {
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -19,7 +19,7 @@ export default function Dashboard({ account, chainId }) {
     if (account && chainId) {
       loadShipments();
     }
-  }, [account, chainId]);
+  }, [account, chainId, role]);
 
   const loadShipments = async () => {
     try {
@@ -95,46 +95,113 @@ export default function Dashboard({ account, chainId }) {
   };
 
   const filteredShipments = shipments.filter((shipment) => {
+    // Role-based filtering
+    if (role && role !== "ADMIN") {
+      if (
+        role === "STAFF" &&
+        (!shipment.shipper ||
+          shipment.shipper.toLowerCase() !== account.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        role === "CARRIER" &&
+        (!shipment.carrier ||
+          shipment.carrier.toLowerCase() !== account.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        role === "BUYER" &&
+        (!shipment.buyer ||
+          shipment.buyer.toLowerCase() !== account.toLowerCase())
+      ) {
+        return false;
+      }
+      if (role === "PACKER" && shipment.status !== 0 && shipment.status !== 1) {
+        return false; // Packer only sees CREATED and PICKED_UP
+      }
+    }
+
+    // Additional filter
     if (filter === "all") return true;
     if (filter === "asShipper")
-      return shipment.shipper.toLowerCase() === account.toLowerCase();
+      return (
+        shipment.shipper &&
+        shipment.shipper.toLowerCase() === account.toLowerCase()
+      );
     if (filter === "asCarrier")
-      return shipment.carrier.toLowerCase() === account.toLowerCase();
+      return (
+        shipment.carrier &&
+        shipment.carrier.toLowerCase() === account.toLowerCase()
+      );
     if (filter === "asBuyer")
-      return shipment.buyer.toLowerCase() === account.toLowerCase();
+      return (
+        shipment.buyer && shipment.buyer.toLowerCase() === account.toLowerCase()
+      );
     return true;
   });
 
   const getMyRole = (shipment) => {
+    if (!account) return "—";
     const roles = [];
-    if (shipment.shipper.toLowerCase() === account.toLowerCase())
+    if (
+      shipment.shipper &&
+      shipment.shipper.toLowerCase() === account.toLowerCase()
+    )
       roles.push("Shipper");
-    if (shipment.carrier.toLowerCase() === account.toLowerCase())
+    if (
+      shipment.carrier &&
+      shipment.carrier.toLowerCase() === account.toLowerCase()
+    )
       roles.push("Carrier");
-    if (shipment.buyer.toLowerCase() === account.toLowerCase())
+    if (
+      shipment.buyer &&
+      shipment.buyer.toLowerCase() === account.toLowerCase()
+    )
       roles.push("Buyer");
-    if (shipment.warehouse.toLowerCase() === account.toLowerCase())
+    if (
+      shipment.warehouse &&
+      shipment.warehouse.toLowerCase() === account.toLowerCase()
+    )
       roles.push("Warehouse");
-    return roles.join(", ");
+    return roles.length > 0 ? roles.join(", ") : "—";
   };
 
   const canProgress = (shipment) => {
+    if (!account) return false;
     const s = shipment.status;
     if (s >= 4) return false;
     const next = s + 1;
-    if (next === 1) return shipment.shipper.toLowerCase() === account.toLowerCase();
-    if (next === 2 || next === 3) return shipment.carrier.toLowerCase() === account.toLowerCase();
-    if (next === 4) return shipment.buyer.toLowerCase() === account.toLowerCase();
+    if (next === 1)
+      return (
+        shipment.shipper &&
+        shipment.shipper.toLowerCase() === account.toLowerCase()
+      );
+    if (next === 2 || next === 3)
+      return (
+        shipment.carrier &&
+        shipment.carrier.toLowerCase() === account.toLowerCase()
+      );
+    if (next === 4)
+      return (
+        shipment.buyer && shipment.buyer.toLowerCase() === account.toLowerCase()
+      );
     return false;
   };
 
   const getNextActionLabel = (status) => {
     switch (status + 1) {
-      case 1: return 'Mark Picked Up';
-      case 2: return 'Mark In Transit';
-      case 3: return 'Mark Arrived';
-      case 4: return 'Confirm Delivered';
-      default: return '';
+      case 1:
+        return "Mark Picked Up";
+      case 2:
+        return "Mark In Transit";
+      case 3:
+        return "Mark Arrived";
+      case 4:
+        return "Confirm Delivered";
+      default:
+        return "";
     }
   };
 
@@ -144,7 +211,7 @@ export default function Dashboard({ account, chainId }) {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const registry = getContract(
-        'ShipmentRegistry',
+        "ShipmentRegistry",
         ShipmentRegistryABI.abi,
         signer,
         chainId
@@ -153,8 +220,8 @@ export default function Dashboard({ account, chainId }) {
       await tx.wait();
       await loadShipments();
     } catch (e) {
-      console.error('Progress error', e);
-      alert(e.message || 'Failed to update status');
+      console.error("Progress error", e);
+      alert(e.message || "Failed to update status");
     }
   };
 
@@ -240,9 +307,14 @@ export default function Dashboard({ account, chainId }) {
           {filteredShipments.map((shipment) => (
             <div key={shipment.id} className="shipment-card">
               <div className="card-header">
-                <h4>#{shipment.id} {shipment.origin !== '-' && shipment.destination !== '-' && (
-                  <span className="route">{shipment.origin} → {shipment.destination}</span>
-                )}</h4>
+                <h4>
+                  #{shipment.id}{" "}
+                  {shipment.origin !== "-" && shipment.destination !== "-" && (
+                    <span className="route">
+                      {shipment.origin} → {shipment.destination}
+                    </span>
+                  )}
+                </h4>
                 <span
                   className={`status-badge status-${getMilestoneColor(
                     shipment.status
@@ -255,31 +327,65 @@ export default function Dashboard({ account, chainId }) {
               <div className="shipment-details">
                 {shipment.description && (
                   <div className="detail-row">
-                    <strong>Description:</strong> {shipment.description.length > 80 ? shipment.description.slice(0,77) + '…' : shipment.description}
+                    <strong>Description:</strong>{" "}
+                    {shipment.description.length > 80
+                      ? shipment.description.slice(0, 77) + "…"
+                      : shipment.description}
                   </div>
                 )}
-                <div className="detail-row"><strong>Role:</strong> {getMyRole(shipment)}</div>
-                <div className="detail-row"><strong>Shipper:</strong> {formatAddress(shipment.shipper)}</div>
-                <div className="detail-row"><strong>Carrier:</strong> {formatAddress(shipment.carrier)}</div>
-                <div className="detail-row"><strong>Buyer:</strong> {formatAddress(shipment.buyer)}</div>
-                <div className="detail-row"><strong>Created:</strong> {shipment.createdAt.toLocaleDateString()}</div>
+                <div className="detail-row">
+                  <strong>Role:</strong> {getMyRole(shipment)}
+                </div>
+                <div className="detail-row">
+                  <strong>Shipper:</strong> {formatAddress(shipment.shipper)}
+                </div>
+                <div className="detail-row">
+                  <strong>Carrier:</strong> {formatAddress(shipment.carrier)}
+                </div>
+                <div className="detail-row">
+                  <strong>Buyer:</strong> {formatAddress(shipment.buyer)}
+                </div>
+                <div className="detail-row">
+                  <strong>Created:</strong>{" "}
+                  {shipment.createdAt.toLocaleDateString()}
+                </div>
                 {shipment.metadataCid && (
                   <div className="detail-row">
-                    <strong>Metadata:</strong>{' '}<a href={getIPFSUrl(shipment.metadataCid)} target="_blank" rel="noopener noreferrer">View on IPFS</a>
+                    <strong>Metadata:</strong>{" "}
+                    <a
+                      href={getIPFSUrl(shipment.metadataCid)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View on IPFS
+                    </a>
                   </div>
                 )}
                 {shipment.documents.length > 0 && (
                   <div className="detail-row">
-                    <strong>Docs:</strong>{' '}
-                    {shipment.documents.slice(0,2).map((d,i) => (
-                      <a key={i} href={getIPFSUrl(d.cid)} target="_blank" rel="noopener noreferrer" style={{marginRight:'6px'}}>{d.docType || 'Doc '+(i+1)}</a>
+                    <strong>Docs:</strong>{" "}
+                    {shipment.documents.slice(0, 2).map((d, i) => (
+                      <a
+                        key={i}
+                        href={getIPFSUrl(d.cid)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ marginRight: "6px" }}
+                      >
+                        {d.docType || "Doc " + (i + 1)}
+                      </a>
                     ))}
-                    {shipment.documents.length > 2 && <span>+{shipment.documents.length - 2} more</span>}
+                    {shipment.documents.length > 2 && (
+                      <span>+{shipment.documents.length - 2} more</span>
+                    )}
                   </div>
                 )}
                 {canProgress(shipment) && (
                   <div className="detail-row">
-                    <button className="action-button primary" onClick={() => progressShipment(shipment)}>
+                    <button
+                      className="action-button primary"
+                      onClick={() => progressShipment(shipment)}
+                    >
                       {getNextActionLabel(shipment.status)}
                     </button>
                   </div>

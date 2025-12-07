@@ -1,5 +1,94 @@
 import { ethers } from "ethers";
 import { getContractAddresses } from "../config/contracts";
+import { ShipmentRegistryABI, EscrowMilestoneABI, LogiTokenABI } from "../abis";
+
+/**
+ * Get ShipmentRegistry contract instance
+ * @returns {Promise<ethers.Contract>}
+ */
+export const getShipmentRegistry = async () => {
+  try {
+    if (!window.ethereum) {
+      throw new Error("Ethereum provider not found. Please install MetaMask.");
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+
+    // Add small delay to ensure provider is ready after account switch
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+
+    return getContract(
+      "ShipmentRegistry",
+      ShipmentRegistryABI.abi,
+      signer,
+      chainId
+    );
+  } catch (error) {
+    console.error("Error getting ShipmentRegistry:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get EscrowMilestone contract instance
+ * @returns {Promise<ethers.Contract>}
+ */
+export const getEscrowMilestone = async () => {
+  try {
+    if (!window.ethereum) {
+      throw new Error("Ethereum provider not found. Please install MetaMask.");
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+
+    // Add small delay to ensure provider is ready after account switch
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+
+    return getContract(
+      "EscrowMilestone",
+      EscrowMilestoneABI.abi,
+      signer,
+      chainId
+    );
+  } catch (error) {
+    console.error("Error getting EscrowMilestone:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get LogiToken contract instance
+ * @returns {Promise<ethers.Contract>}
+ */
+export const getLogiToken = async () => {
+  try {
+    if (!window.ethereum) {
+      throw new Error("Ethereum provider not found. Please install MetaMask.");
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+
+    // Add small delay to ensure provider is ready after account switch
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+
+    return getContract("LogiToken", LogiTokenABI.abi, signer, chainId);
+  } catch (error) {
+    console.error("Error getting LogiToken:", error);
+    throw error;
+  }
+};
 
 /**
  * Get contract instance
@@ -68,7 +157,7 @@ export const formatAddress = (address, chars = 4) => {
 
 /**
  * Get milestone status name
- * @param {number} status - Status code (0-4)
+ * @param {number} status - Status code (0-6)
  * @returns {string}
  */
 export const getMilestoneStatusName = (status) => {
@@ -78,6 +167,8 @@ export const getMilestoneStatusName = (status) => {
     "IN_TRANSIT",
     "ARRIVED",
     "DELIVERED",
+    "CANCELED",
+    "FAILED",
   ];
   return statuses[status] || "UNKNOWN";
 };
@@ -94,6 +185,8 @@ export const getMilestoneColor = (status) => {
     "yellow", // IN_TRANSIT
     "orange", // ARRIVED
     "green", // DELIVERED
+    "red", // CANCELED
+    "red", // FAILED
   ];
   return colors[status] || "gray";
 };

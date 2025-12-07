@@ -15,16 +15,31 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
   useEffect(() => {
     checkConnection();
 
+    let accountChangeTimeout;
+
+    // Debounced handler to avoid multiple rapid calls
+    const debouncedAccountsChanged = (accounts) => {
+      if (accountChangeTimeout) {
+        clearTimeout(accountChangeTimeout);
+      }
+      accountChangeTimeout = setTimeout(() => {
+        handleAccountsChanged(accounts);
+      }, 300);
+    };
+
     if (window.ethereum) {
-      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("accountsChanged", debouncedAccountsChanged);
       window.ethereum.on("chainChanged", handleChainChanged);
     }
 
     return () => {
+      if (accountChangeTimeout) {
+        clearTimeout(accountChangeTimeout);
+      }
       if (window.ethereum) {
         window.ethereum.removeListener(
           "accountsChanged",
-          handleAccountsChanged
+          debouncedAccountsChanged
         );
         window.ethereum.removeListener("chainChanged", handleChainChanged);
       }
@@ -179,18 +194,52 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
 
   const loadIdentity = async (provider, addr, cId) => {
     try {
+      // Add delay to ensure provider is ready
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const signer = await provider.getSigner();
-      const registry = getContract("ShipmentRegistry", ShipmentRegistryABI.abi, signer, cId);
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        cId
+      );
       const name = await registry.displayName(addr);
-      const isAdmin = await registry.hasRole(await registry.DEFAULT_ADMIN_ROLE(), addr);
-      const isShipper = await registry.hasRole(await registry.SHIPPER_ROLE(), addr);
-      const isCarrier = await registry.hasRole(await registry.CARRIER_ROLE(), addr);
+      const isAdmin = await registry.hasRole(
+        await registry.DEFAULT_ADMIN_ROLE(),
+        addr
+      );
+      const isShipper = await registry.hasRole(
+        await registry.SHIPPER_ROLE(),
+        addr
+      );
+      const isPacker = await registry.hasRole(
+        await registry.PACKER_ROLE(),
+        addr
+      );
+      const isCarrier = await registry.hasRole(
+        await registry.CARRIER_ROLE(),
+        addr
+      );
       const isBuyer = await registry.hasRole(await registry.BUYER_ROLE(), addr);
       setDisplayName(name || "");
-      const r = isAdmin ? "Admin" : isShipper ? "Shipper" : isCarrier ? "Carrier" : isBuyer ? "Buyer" : "";
+      const r = isAdmin
+        ? "Admin"
+        : isShipper
+        ? "Shipper"
+        : isPacker
+        ? "Packer"
+        : isCarrier
+        ? "Carrier"
+        : isBuyer
+        ? "Buyer"
+        : "";
       setRoleName(r);
     } catch (e) {
-      console.warn("Load identity failed", e);
+      console.warn("Load identity failed, setting defaults", e);
+      // Set defaults on error instead of leaving old values
+      setDisplayName("");
+      setRoleName("");
     }
   };
 
@@ -206,7 +255,11 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
           >
             {isConnecting ? "Connecting..." : "Connect Wallet"}
           </button>
-          {error && <p className="error-message" style={{ color: "#000" }}>{error}</p>}
+          {error && (
+            <p className="error-message" style={{ color: "#000" }}>
+              {error}
+            </p>
+          )}
           {!window.ethereum && (
             <p className="warning-message" style={{ color: "#000" }}>
               Please install{" "}
@@ -227,12 +280,18 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
           <div className="account-info">
             <div className="account-details">
               <div className="address" style={{ color: "#000" }}>
-                <div><strong>Account:</strong> {formatAddress(account)}</div>
+                <div>
+                  <strong>Account:</strong> {formatAddress(account)}
+                </div>
                 {displayName && (
-                  <div><strong>Name:</strong> {displayName}</div>
+                  <div>
+                    <strong>Name:</strong> {displayName}
+                  </div>
                 )}
                 {roleName && (
-                  <div><strong>Role:</strong> {roleName}</div>
+                  <div>
+                    <strong>Role:</strong> {roleName}
+                  </div>
                 )}
               </div>
               <div className="network" style={{ color: "#000" }}>
@@ -242,14 +301,20 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
                 <strong>Balance:</strong> {parseFloat(balance).toFixed(4)} ETH
               </div>
             </div>
-            <button onClick={disconnectWallet} className="disconnect-button" style={{ color: "#FFF" }}>
+            <button
+              onClick={disconnectWallet}
+              className="disconnect-button"
+              style={{ color: "#FFF" }}
+            >
               Disconnect
             </button>
           </div>
 
           {chainId !== 31337 && chainId !== 11155111 && (
             <div className="network-warning" style={{ color: "#000" }}>
-              <p style={{ color: "#000" }}>⚠️ Please switch to Sepolia Testnet or Local Network</p>
+              <p style={{ color: "#000" }}>
+                ⚠️ Please switch to Sepolia Testnet or Local Network
+              </p>
               <button
                 onClick={() => switchNetwork(11155111)}
                 className="switch-network-button"

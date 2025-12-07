@@ -39,7 +39,10 @@ async function main() {
   const EscrowMilestone = await hre.ethers.getContractFactory(
     "EscrowMilestone"
   );
-  const escrowMilestone = await EscrowMilestone.deploy(logiTokenAddress);
+  const escrowMilestone = await EscrowMilestone.deploy(
+    logiTokenAddress,
+    registryAddress
+  );
   await escrowMilestone.waitForDeployment();
   const escrowAddress = await escrowMilestone.getAddress();
   console.log("✓ EscrowMilestone deployed to:", escrowAddress);
