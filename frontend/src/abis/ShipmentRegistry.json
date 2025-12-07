@@ -1,5 +1,5 @@
 {
-  "address": "0x0C3E202A711238BBDEAC6AC7a2daE548DBA92775",
+  "address": "0x80Aa18aeDcA1f5D71bFc0b028bd73DC5db2c3d72",
   "abi": [
     {
       "inputs": [],
@@ -148,6 +148,25 @@
       "anonymous": false,
       "inputs": [
         {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "latitude",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "longitude",
+          "type": "uint256"
+        }
+      ],
+      "name": "OriginLocationUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
           "indexed": true,
           "internalType": "bytes32",
           "name": "role",
@@ -263,6 +282,31 @@
       "type": "event"
     },
     {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "maxDistance",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        }
+      ],
+      "name": "ShippingTierUpdated",
+      "type": "event"
+    },
+    {
       "inputs": [],
       "name": "BUYER_ROLE",
       "outputs": [
@@ -366,6 +410,25 @@
       "name": "attachDocument",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "distanceKm",
+          "type": "uint256"
+        }
+      ],
+      "name": "calculateShippingFee",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -627,6 +690,60 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "deliveryLatitude",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "deliveryLongitude",
+          "type": "uint256"
+        }
+      ],
+      "name": "getShippingFee",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "distance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getShippingTiers",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "maxDistance",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "fee",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct ShipmentRegistry.ShippingTier[]",
+          "name": "",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "getTotalShipments",
       "outputs": [
@@ -722,12 +839,45 @@
     },
     {
       "inputs": [],
+      "name": "initializeShippingTiers",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "logiToken",
       "outputs": [
         {
           "internalType": "address",
           "name": "",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "originLatitude",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "originLongitude",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
@@ -829,6 +979,48 @@
     {
       "inputs": [
         {
+          "internalType": "uint256",
+          "name": "_latitude",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_longitude",
+          "type": "uint256"
+        }
+      ],
+      "name": "setOriginLocation",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "shippingTiers",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "maxDistance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "bytes4",
           "name": "interfaceId",
           "type": "bytes4"
@@ -859,6 +1051,29 @@
         }
       ],
       "name": "updateMilestone",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxDistance",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "fee",
+          "type": "uint256"
+        }
+      ],
+      "name": "updateShippingTier",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

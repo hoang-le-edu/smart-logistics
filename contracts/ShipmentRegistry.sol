@@ -103,6 +103,21 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     address public escrowContract;
     address public logiToken;
 
+    // Base origin point for distance calculation (latitude, longitude as fixed-point numbers)
+    // Stored as integers: actual_value * 1e6 (e.g., 21.0285 -> 21028500)
+    uint256 public originLatitude;
+    uint256 public originLongitude;
+
+    // Shipping fee tiers based on distance
+    struct ShippingTier {
+        uint256 maxDistance;  // in km
+        uint256 fee;          // fee amount in token units
+    }
+    ShippingTier[] public shippingTiers;
+
+    event OriginLocationUpdated(uint256 latitude, uint256 longitude);
+    event ShippingTierUpdated(uint256 index, uint256 maxDistance, uint256 fee);
+
     /**
      * @dev Set the escrow contract address (admin only)
      */
@@ -117,6 +132,134 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     function setLogiToken(address _addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_addr != address(0), "Invalid token address");
         logiToken = _addr;
+    }
+
+    /**
+     * @dev Set origin location for shipping fee calculation (admin only)
+     * @param _latitude Latitude * 1e6 (e.g., 21028500 for 21.0285°)
+     * @param _longitude Longitude * 1e6 (e.g., 105854200 for 105.8542°)
+     */
+    function setOriginLocation(uint256 _latitude, uint256 _longitude) 
+        external 
+        onlyRole(DEFAULT_ADMIN_ROLE) 
+    {
+        originLatitude = _latitude;
+        originLongitude = _longitude;
+        emit OriginLocationUpdated(_latitude, _longitude);
+    }
+
+    /**
+     * @dev Initialize shipping fee tiers (admin only)
+     * Default tiers: <2km=0, 2-10km=10, 10-100km=50, 100-500km=150, >=500km=300
+     */
+    function initializeShippingTiers() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        delete shippingTiers;
+        shippingTiers.push(ShippingTier(2, 0));           // < 2km: free
+        shippingTiers.push(ShippingTier(10, 10));         // 2-10km: 10 LOGI
+        shippingTiers.push(ShippingTier(100, 50));        // 10-100km: 50 LOGI
+        shippingTiers.push(ShippingTier(500, 150));       // 100-500km: 150 LOGI
+        shippingTiers.push(ShippingTier(type(uint256).max, 300)); // >= 500km: 300 LOGI
+        emit ShippingTierUpdated(0, 0, 0);
+    }
+
+    /**
+     * @dev Update a specific shipping tier (admin only)
+     */
+    function updateShippingTier(uint256 index, uint256 maxDistance, uint256 fee) 
+        external 
+        onlyRole(DEFAULT_ADMIN_ROLE) 
+    {
+        require(index < shippingTiers.length, "Invalid tier index");
+        shippingTiers[index] = ShippingTier(maxDistance, fee);
+        emit ShippingTierUpdated(index, maxDistance, fee);
+    }
+
+    /**
+     * @dev Calculate shipping fee based on distance in km
+     * @param distanceKm Distance in kilometers
+     * @return fee The calculated shipping fee
+     */
+    function calculateShippingFee(uint256 distanceKm) public view returns (uint256) {
+        require(shippingTiers.length > 0, "Shipping tiers not initialized");
+        
+        for (uint256 i = 0; i < shippingTiers.length; i++) {
+            if (distanceKm < shippingTiers[i].maxDistance) {
+                return shippingTiers[i].fee;
+            }
+        }
+        return shippingTiers[shippingTiers.length - 1].fee;
+    }
+
+    /**
+     * @dev Get shipping fee based on delivery coordinates
+     * @param deliveryLatitude Latitude * 1e6 (e.g., 21028500)
+     * @param deliveryLongitude Longitude * 1e6 (e.g., 105854200)
+     * @return distance Distance in km
+     * @return fee Calculated shipping fee
+     */
+    function getShippingFee(uint256 deliveryLatitude, uint256 deliveryLongitude) 
+        external 
+        view 
+        returns (uint256 distance, uint256 fee) 
+    {
+        require(originLatitude != 0 && originLongitude != 0, "Origin location not set");
+        distance = calculateHaversineDistance(originLatitude, originLongitude, deliveryLatitude, deliveryLongitude);
+        fee = calculateShippingFee(distance);
+    }
+
+    /**
+     * @dev Haversine formula for distance calculation (simplified approximation)
+     * Returns distance in km
+     * Note: This is a simplified version suitable for relatively short distances
+     */
+    function calculateHaversineDistance(
+        uint256 lat1,
+        uint256 lon1,
+        uint256 lat2,
+        uint256 lon2
+    ) internal pure returns (uint256) {
+        // Convert from 1e6 format and calculate differences
+        int256 dlat = int256(lat2) - int256(lat1);
+        int256 dlon = int256(lon2) - int256(lon1);
+
+        // Get absolute values
+        uint256 dlat_abs = dlat < 0 ? uint256(-dlat) : uint256(dlat);
+        uint256 dlon_abs = dlon < 0 ? uint256(-dlon) : uint256(dlon);
+
+        // Simplified calculation: distance ≈ sqrt(dlat² + dlon²) * 111 km per degree
+        // Coordinates are in 1e6 format (e.g., 10.870493 -> 10870493)
+        // Calculate: sqrt((dlat/1e6)² + (dlon/1e6)²) * 111
+        // = sqrt(dlat² + dlon²) / 1e6 * 111
+        // = sqrt(dlat² + dlon²) * 111 / 1e6
+        
+        uint256 sumSquares = dlat_abs * dlat_abs + dlon_abs * dlon_abs;
+        uint256 sqrtValue = sqrt(sumSquares);
+        
+        // Multiply by 111 km/degree, then divide by 1e6 to convert from micro-degrees
+        uint256 distance = (sqrtValue * 111) / 1e6;
+        
+        return distance;
+    }
+
+    /**
+     * @dev Integer square root function (Babylonian method)
+     */
+    function sqrt(uint256 x) internal pure returns (uint256) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        uint256 y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+        return y;
+    }
+
+    /**
+     * @dev Get all shipping tiers
+     */
+    function getShippingTiers() external view returns (ShippingTier[] memory) {
+        return shippingTiers;
     }
 
     constructor() {
