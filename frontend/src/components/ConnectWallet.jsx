@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { ShipmentRegistryABI } from "../abis";
 import { getContract } from "../utils/contracts";
+import "../styles/global.css";
+import "../App.css";
 
 export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
   const [account, setAccount] = useState(null);
@@ -244,30 +246,29 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
   };
 
   return (
-    <div className="connect-wallet" style={{ color: "#000" }}>
+    <div className="connect-wallet">
       {!account ? (
         <div className="wallet-connect-section">
           <button
             onClick={connectWallet}
             disabled={isConnecting}
             className="connect-button"
-            style={{ color: "#FFF" }}
           >
             {isConnecting ? "Connecting..." : "Connect Wallet"}
           </button>
           {error && (
-            <p className="error-message" style={{ color: "#000" }}>
+            <p className="error-message">
               {error}
             </p>
           )}
           {!window.ethereum && (
-            <p className="warning-message" style={{ color: "#000" }}>
+            <p className="warning-message">
               Please install{" "}
               <a
                 href="https://metamask.io/download/"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "#000" }}
+                className="link"
               >
                 MetaMask
               </a>{" "}
@@ -279,7 +280,7 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
         <div className="wallet-info">
           <div className="account-info">
             <div className="account-details">
-              <div className="address" style={{ color: "#000" }}>
+              <div className="address">
                 <div>
                   <strong>Account:</strong> {formatAddress(account)}
                 </div>
@@ -294,31 +295,29 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
                   </div>
                 )}
               </div>
-              <div className="network" style={{ color: "#000" }}>
+              <div className="network">
                 <strong>Network:</strong> {getNetworkName(chainId)}
               </div>
-              <div className="balance" style={{ color: "#000" }}>
+              <div className="balance">
                 <strong>Balance:</strong> {parseFloat(balance).toFixed(4)} ETH
               </div>
             </div>
             <button
               onClick={disconnectWallet}
               className="disconnect-button"
-              style={{ color: "#FFF" }}
             >
               Disconnect
             </button>
           </div>
 
           {chainId !== 31337 && chainId !== 11155111 && (
-            <div className="network-warning" style={{ color: "#000" }}>
-              <p style={{ color: "#000" }}>
+            <div className="network-warning">
+              <p>
                 ⚠️ Please switch to Sepolia Testnet or Local Network
               </p>
               <button
                 onClick={() => switchNetwork(11155111)}
                 className="switch-network-button"
-                style={{ color: "#000" }}
               >
                 Switch to Sepolia
               </button>

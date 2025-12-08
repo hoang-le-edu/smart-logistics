@@ -32,6 +32,8 @@ export default function BuyerPanel({ account, chainId }) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [txHash, setTxHash] = useState('');
+  const [nameCache, setNameCache] = useState({});
+  const [namesReady, setNamesReady] = useState(false);
 
   // Order form state
   const [orderForm, setOrderForm] = useState({
@@ -109,6 +111,27 @@ export default function BuyerPanel({ account, chainId }) {
       );
 
       setShipments(shipmentsData.filter((s) => s !== null));
+      // Prefetch display names for involved addresses to avoid UI flicker
+      const addrs = new Set();
+      for (const s of shipmentsData) {
+        if (!s) continue;
+        if (s.staff) addrs.add(s.staff.toLowerCase());
+        if (s.carrier) addrs.add(s.carrier.toLowerCase());
+        if (s.buyer) addrs.add(s.buyer.toLowerCase());
+      }
+      try {
+        const nameMap = { ...nameCache };
+        for (const a of addrs) {
+          if (nameMap[a] === undefined) {
+            const nm = await fetchDisplayName(a);
+            nameMap[a] = nm || "";
+          }
+        }
+        setNameCache(nameMap);
+        setNamesReady(true);
+      } catch (_) {
+        setNamesReady(true);
+      }
 
       // Load my orders from logs
       try {
@@ -143,6 +166,31 @@ export default function BuyerPanel({ account, chainId }) {
       setLoadingShipments(false);
       setLoadingOrders(false);
     }
+  };
+
+  // Low-level fetcher for display name (no state updates here)
+  const fetchDisplayName = async (addr) => {
+    if (!addr) return "";
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        provider,
+        chainId
+      );
+      const name = await registry.displayName(addr);
+      return name || "";
+    } catch (e) {
+      return "";
+    }
+  };
+
+  // Small helper component to show display name or fallback to truncated address
+  const InlineName = ({ address }) => {
+    const key = (address || "").toLowerCase();
+    const nm = nameCache[key] || "";
+    return <span>{nm}</span>;
   };
 
   const loadEscrowDetails = async (shipmentId) => {
@@ -902,12 +950,10 @@ export default function BuyerPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Staff:</strong> {shipment.staff.slice(0, 10)}
-                      ...
+                      <strong>Staff:</strong> <InlineName address={shipment.staff} />
                     </p>
                     <p>
-                      <strong>Carrier:</strong> {shipment.carrier.slice(0, 10)}
-                      ...
+                      <strong>Carrier:</strong> <InlineName address={shipment.carrier} />
                     </p>
                     <p>
                       <strong>Created:</strong>{' '}
