@@ -14,6 +14,7 @@ import {
   isPinataConfigured,
   retrieveFromIPFS,
 } from "../utils/ipfs";
+import ShipmentDetailModal from "../components/ShipmentDetailModal";
 
 export default function CarrierPanel({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
@@ -23,12 +24,14 @@ export default function CarrierPanel({ account, chainId }) {
   const [cancelReason, setCancelReason] = useState("");
   const [proofFile, setProofFile] = useState(null);
   const [uploadingTransitDoc, setUploadingTransitDoc] = useState(null);
-  const [uploadedTransitDocSuccessId, setUploadedTransitDocSuccessId] = useState(null);
+  const [uploadedTransitDocSuccessId, setUploadedTransitDocSuccessId] =
+    useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [viewingShipment, setViewingShipment] = useState(null);
   const [txHash, setTxHash] = useState("");
   const [nameCache, setNameCache] = useState({});
 
@@ -46,6 +49,13 @@ export default function CarrierPanel({ account, chainId }) {
       return "";
     }
   };
+
+  // Pagination state
+  const [displayedShipmentsCount, setDisplayedShipmentsCount] = useState(5);
+  const [displayedAvailableCount, setDisplayedAvailableCount] = useState(5);
+  const [totalMyShipments, setTotalMyShipments] = useState(0);
+  const [totalAvailableShipments, setTotalAvailableShipments] = useState(0);
+  const RECORDS_PER_PAGE = 5;
 
   // Cancel modal state
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -215,7 +225,9 @@ export default function CarrierPanel({ account, chainId }) {
           // Auto-revert the success label back to "Upload Document" after a few seconds
           setTimeout(() => {
             // Only clear if still pointing to the same shipment
-            setUploadedTransitDocSuccessId((curr) => (curr === shipmentId ? null : curr));
+            setUploadedTransitDocSuccessId((curr) =>
+              curr === shipmentId ? null : curr
+            );
           }, 3000);
           // Refresh lists to reflect any changes
           await loadCarrierShipments();
@@ -229,7 +241,9 @@ export default function CarrierPanel({ account, chainId }) {
     } finally {
       setUploadingTransitDoc(null);
       // If there was an error, ensure label returns to default state
-      setUploadedTransitDocSuccessId((curr) => (curr === shipmentId ? curr : curr));
+      setUploadedTransitDocSuccessId((curr) =>
+        curr === shipmentId ? curr : curr
+      );
     }
   };
 
@@ -375,7 +389,11 @@ export default function CarrierPanel({ account, chainId }) {
     }
 
     if (!canUpdateMilestone(currentStatus, 2)) {
-      setError(`Cannot update from ${getMilestoneStatusName(currentStatus)} to In Transit`);
+      setError(
+        `Cannot update from ${getMilestoneStatusName(
+          currentStatus
+        )} to In Transit`
+      );
       return;
     }
 
@@ -475,7 +493,9 @@ export default function CarrierPanel({ account, chainId }) {
     }
 
     if (!canUpdateMilestone(currentStatus, 3)) {
-      setError(`Cannot update from ${getMilestoneStatusName(currentStatus)} to Arrived`);
+      setError(
+        `Cannot update from ${getMilestoneStatusName(currentStatus)} to Arrived`
+      );
       return;
     }
 
@@ -548,9 +568,15 @@ export default function CarrierPanel({ account, chainId }) {
       );
 
       await handleTransaction(
-        () => registry.markShipmentFailed(cancelModalShipmentId, cancelModalReason.trim()),
+        () =>
+          registry.markShipmentFailed(
+            cancelModalShipmentId,
+            cancelModalReason.trim()
+          ),
         async (receipt) => {
-          setSuccess("Shipment canceled and marked as failed. Buyer will be refunded.");
+          setSuccess(
+            "Shipment canceled and marked as failed. Buyer will be refunded."
+          );
           setTxHash(receipt.hash);
 
           // upload cancel proof if provided
@@ -559,12 +585,19 @@ export default function CarrierPanel({ account, chainId }) {
               if (isPinataConfigured()) {
                 const result = await uploadToIPFS(cancelModalFile);
                 await handleTransaction(
-                  () => registry.attachDocument(cancelModalShipmentId, "Cancel Proof", result.cid),
+                  () =>
+                    registry.attachDocument(
+                      cancelModalShipmentId,
+                      "Cancel Proof",
+                      result.cid
+                    ),
                   () => {},
                   () => {}
                 );
               } else {
-                console.warn("Pinata not configured, skipping cancel proof upload");
+                console.warn(
+                  "Pinata not configured, skipping cancel proof upload"
+                );
               }
             } catch (attachErr) {
               console.warn("Cancel proof upload failed:", attachErr);
@@ -681,14 +714,20 @@ export default function CarrierPanel({ account, chainId }) {
                       {new Date(s.timestamp * 1000).toLocaleDateString()}
                     </p>
                     {s.metadataCid && (
-                      <a
-                        href={`https://gateway.pinata.cloud/ipfs/${s.metadataCid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
                         className="metadata-link"
+                        onClick={() => setViewingShipment(s)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#2563eb",
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          padding: 0,
+                        }}
                       >
-                        View Metadata
-                      </a>
+                        View Details
+                      </button>
                     )}
                   </div>
                   <div
@@ -714,7 +753,7 @@ export default function CarrierPanel({ account, chainId }) {
                         >
                           Mark In Transit
                         </button>
-                        <label className="action-button" >
+                        <label className="action-button">
                           {uploadingTransitDoc === s.id
                             ? "Uploading..."
                             : uploadedTransitDocSuccessId === s.id
@@ -751,10 +790,7 @@ export default function CarrierPanel({ account, chainId }) {
           ) : (
             <div className="shipments-grid">
               {shipments.map((shipment) => (
-                <div
-                  key={shipment.id}
-                  className={`shipment-card`}
-                >
+                <div key={shipment.id} className={`shipment-card`}>
                   <div className="card-header">
                     <h4>Shipment #{shipment.id}</h4>
                     <span
@@ -775,19 +811,30 @@ export default function CarrierPanel({ account, chainId }) {
                       {new Date(shipment.timestamp * 1000).toLocaleDateString()}
                     </p>
                     {shipment.metadataCid && (
-                      <a
-                        href={`https://gateway.pinata.cloud/ipfs/${shipment.metadataCid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
                         className="metadata-link"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingShipment(shipment);
+                        }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#2563eb",
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          padding: 0,
+                        }}
                       >
-                        View Metadata
-                      </a>
+                        View Details
+                      </button>
                     )}
                   </div>
                   {shipment.milestoneStatus === 2 && (
-                    <div className="card-actions" style={{ padding: "8px 16px 16px" }}>
+                    <div
+                      className="card-actions"
+                      style={{ padding: "8px 16px 16px" }}
+                    >
                       <div style={{ display: "flex", gap: 8 }}>
                         <button
                           className="action-button"
@@ -795,7 +842,10 @@ export default function CarrierPanel({ account, chainId }) {
                           disabled={loading}
                           onClick={(e) => {
                             e.stopPropagation();
-                            markArrivedDirect(shipment.id, shipment.milestoneStatus);
+                            markArrivedDirect(
+                              shipment.id,
+                              shipment.milestoneStatus
+                            );
                           }}
                         >
                           Mark Arrived
@@ -859,12 +909,20 @@ export default function CarrierPanel({ account, chainId }) {
           >
             <div
               className="modal"
-              style={{ background: "#fff", padding: 20, borderRadius: 8, width: 520, maxWidth: "90%" }}
+              style={{
+                background: "#fff",
+                padding: 20,
+                borderRadius: 8,
+                width: 520,
+                maxWidth: "90%",
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 style={{ marginTop: 0 }}>Cancel Shipment</h3>
               <div className="form-group">
-                <label htmlFor="cancelReasonModal">Reason <span className="required">*</span></label>
+                <label htmlFor="cancelReasonModal">
+                  Reason <span className="required">*</span>
+                </label>
                 <textarea
                   id="cancelReasonModal"
                   value={cancelModalReason}
@@ -875,24 +933,41 @@ export default function CarrierPanel({ account, chainId }) {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="cancelProof">Attach Cancel Proof (optional)</label>
+                <label htmlFor="cancelProof">
+                  Attach Cancel Proof (optional)
+                </label>
                 <input
                   type="file"
                   id="cancelProof"
-                  onChange={(e) => setCancelModalFile(e.target.files?.[0] || null)}
+                  onChange={(e) =>
+                    setCancelModalFile(e.target.files?.[0] || null)
+                  }
                   accept=".pdf,.jpg,.jpeg,.png,.json"
                   className="form-file"
                   style={{ color: "#000", backgroundColor: "#fff" }}
                 />
                 <div style={{ marginTop: 6, color: "#000" }}>
-                  {cancelModalFile ? `Selected: ${cancelModalFile.name}` : "No file selected"}
+                  {cancelModalFile
+                    ? `Selected: ${cancelModalFile.name}`
+                    : "No file selected"}
                 </div>
                 {!isPinataConfigured() && (
-                  <p className="hint warning">⚠️ IPFS not configured. Files won't be uploaded.</p>
+                  <p className="hint warning">
+                    ⚠️ IPFS not configured. Files won't be uploaded.
+                  </p>
                 )}
               </div>
-              <div className="form-actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button className="cancel-button" onClick={closeCancelModal} disabled={cancelModalLoading}>Close</button>
+              <div
+                className="form-actions"
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  className="cancel-button"
+                  onClick={closeCancelModal}
+                  disabled={cancelModalLoading}
+                >
+                  Close
+                </button>
                 <button
                   className="submit-button"
                   onClick={confirmCancelShipment}
@@ -905,7 +980,13 @@ export default function CarrierPanel({ account, chainId }) {
           </div>
         )}
 
-        
+        {/* Shipment Detail Modal */}
+        {viewingShipment && (
+          <ShipmentDetailModal
+            shipment={viewingShipment}
+            onClose={() => setViewingShipment(null)}
+          />
+        )}
       </div>
     </div>
   );

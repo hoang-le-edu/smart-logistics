@@ -13,6 +13,7 @@ import {
   isPinataConfigured,
 } from "../utils/ipfs";
 import { retrieveFromIPFS, getIPFSUrl } from "../utils/ipfs";
+import ShipmentDetailModal from "../components/ShipmentDetailModal";
 
 export default function ShipperPanel({ account, chainId }) {
   const [orders, setOrders] = useState([]);
@@ -20,6 +21,14 @@ export default function ShipperPanel({ account, chainId }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [useAutoEscrow, setUseAutoEscrow] = useState(true);
   const [createWithoutOrder, setCreateWithoutOrder] = useState(false);
+  const [viewingShipment, setViewingShipment] = useState(null);
+  const [viewingOrder, setViewingOrder] = useState(null);
+
+  // Pagination state
+  const [displayedOrdersCount, setDisplayedOrdersCount] = useState(5);
+  const [allOrders, setAllOrders] = useState([]);
+  const RECORDS_PER_PAGE = 5;
+
   const [formData, setFormData] = useState({
     description: "",
     origin: "",
@@ -66,6 +75,11 @@ export default function ShipperPanel({ account, chainId }) {
   useEffect(() => {
     if (account) loadOpenOrders();
   }, [account, chainId]);
+
+  // Update displayed orders when count changes
+  useEffect(() => {
+    setOrders(allOrders.slice(0, displayedOrdersCount));
+  }, [displayedOrdersCount, allOrders]);
 
   const loadOpenOrders = async () => {
     setLoadingOrders(true);
@@ -200,9 +214,12 @@ export default function ShipperPanel({ account, chainId }) {
           shipmentMetadataCid: s?.metadataCid,
         };
       });
-      setOrders(withStatus);
+
+      setAllOrders(withStatus);
+      setOrders(withStatus.slice(0, displayedOrdersCount));
     } catch (e) {
       console.warn("Failed to load orders", e);
+      setAllOrders([]);
       setOrders([]);
     } finally {
       setLoadingOrders(false);
@@ -413,7 +430,7 @@ export default function ShipperPanel({ account, chainId }) {
   return (
     <div className="shipper-panel">
       <div className="panel-header">
-        <h2>Open Orders</h2>
+        <h2>Open Orders ({allOrders.length})</h2>
         <p className="subtitle">Chọn đơn hàng để điền sẵn thông tin shipment</p>
       </div>
       <div className="shipments-grid" style={{ marginBottom: 24 }}>
@@ -450,14 +467,25 @@ export default function ShipperPanel({ account, chainId }) {
                     View
                   </a>
                   {o.hasShipment ? (
-                    <a
-                      href={getIPFSUrl(o.shipmentMetadataCid)}
+                    <button
                       className="metadata-link"
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={() =>
+                        setViewingShipment({
+                          id: o.shipmentId,
+                          metadataCid: o.shipmentMetadataCid,
+                        })
+                      }
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#2563eb",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        padding: 0,
+                      }}
                     >
                       View Shipment
-                    </a>
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -473,6 +501,31 @@ export default function ShipperPanel({ account, chainId }) {
           ))
         )}
       </div>
+
+      {/* Load More Orders Button */}
+      {orders.length > 0 && orders.length < allOrders.length && (
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <button
+            className="btn-secondary"
+            onClick={() =>
+              setDisplayedOrdersCount((prev) => prev + RECORDS_PER_PAGE)
+            }
+            style={{
+              padding: "10px 20px",
+              fontSize: "14px",
+              fontWeight: "600",
+            }}
+          >
+            Load More Orders (
+            {Math.min(RECORDS_PER_PAGE, allOrders.length - orders.length)} more
+            available)
+          </button>
+          <p style={{ marginTop: "10px", color: "#6b7280", fontSize: "14px" }}>
+            Showing {orders.length} of {allOrders.length} orders
+          </p>
+        </div>
+      )}
+
       <div className="panel-header">
         <h2>Create New Shipment</h2>
         <p className="subtitle">
@@ -718,6 +771,22 @@ export default function ShipperPanel({ account, chainId }) {
           </div>
         )}
       </form>
+
+      {/* Shipment Detail Modal */}
+      {viewingShipment && (
+        <ShipmentDetailModal
+          shipment={viewingShipment}
+          onClose={() => setViewingShipment(null)}
+        />
+      )}
+
+      {/* Order Detail Modal */}
+      {viewingOrder && (
+        <ShipmentDetailModal
+          shipment={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+        />
+      )}
     </div>
   );
 }

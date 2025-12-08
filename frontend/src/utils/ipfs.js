@@ -51,8 +51,33 @@ export function decryptData(ciphertext) {
  */
 export const uploadToIPFS = async (file, filename = null) => {
   try {
-    // Read file content and encrypt it
-    const fileContent = await file.text();
+    // Detect if file is binary (image, pdf, etc.)
+    const isBinary =
+      file.type.startsWith("image/") ||
+      file.type.startsWith("video/") ||
+      file.type === "application/pdf" ||
+      file.type.startsWith("application/");
+
+    let fileContent;
+    if (isBinary) {
+      // For binary files, read as arrayBuffer and convert to base64 properly
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+
+      // Convert Uint8Array to base64 using proper method
+      let binary = "";
+      const chunkSize = 0x8000; // Process in chunks to avoid call stack issues
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      fileContent = btoa(binary);
+    } else {
+      // For text files, read as text
+      fileContent = await file.text();
+    }
+
+    // Encrypt the content (whether base64 or text)
     const encrypted = encryptData(fileContent);
     const encryptedBlob = new Blob([encrypted], {
       type: "application/octet-stream",
@@ -66,8 +91,9 @@ export const uploadToIPFS = async (file, filename = null) => {
       keyvalues: {
         uploadedAt: new Date().toISOString(),
         originalType: file.type,
-        originalSize: String(file.size), // Convert to string
-        encrypted: "true", // Convert boolean to string
+        originalSize: String(file.size),
+        encrypted: "true",
+        isBinary: String(isBinary),
       },
     });
     formData.append("pinataMetadata", metadata);
@@ -140,6 +166,7 @@ export const uploadJSONToIPFS = async (
           name: filename,
           keyvalues: {
             uploadedAt: new Date().toISOString(),
+            encrypted: "true", // Add encrypted flag as string
           },
         },
         pinataOptions: {
