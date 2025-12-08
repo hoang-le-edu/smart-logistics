@@ -14,6 +14,7 @@ export default function Dashboard({ account, chainId, role }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [nameCache, setNameCache] = useState({});
 
   useEffect(() => {
     if (account && chainId) {
@@ -85,7 +86,34 @@ export default function Dashboard({ account, chainId, role }) {
         })
       );
 
-      setShipments(shipmentsData.filter((s) => s !== null));
+      const list = shipmentsData.filter((s) => s !== null);
+      setShipments(list);
+
+      // Prefetch display names for staff/carrier/buyer to avoid flicker
+      try {
+        const addrs = new Set();
+        for (const s of list) {
+          if (s.staff) addrs.add(s.staff.toLowerCase());
+          if (s.carrier) addrs.add(s.carrier.toLowerCase());
+          if (s.buyer) addrs.add(s.buyer.toLowerCase());
+        }
+        const map = { ...nameCache };
+        const registry = getContract(
+          "ShipmentRegistry",
+          ShipmentRegistryABI.abi,
+          signer,
+          chainId
+        );
+        for (const a of addrs) {
+          if (map[a] === undefined) {
+            const nm = await registry.displayName(a);
+            map[a] = nm || "";
+          }
+        }
+        setNameCache(map);
+      } catch (e) {
+        // ignore name prefetch errors
+      }
     } catch (err) {
       console.error("Error loading shipments:", err);
       setError("Failed to load shipments. Make sure contracts are deployed.");
@@ -362,13 +390,13 @@ export default function Dashboard({ account, chainId, role }) {
                   <strong>Role:</strong> {getMyRole(shipment)}
                 </div>
                 <div className="detail-row">
-                  <strong>Staff:</strong> {formatAddress(shipment.staff)}
+                    <strong>Staff:</strong> {nameCache[shipment.staff?.toLowerCase()] || ""}
                 </div>
                 <div className="detail-row">
-                  <strong>Carrier:</strong> {formatAddress(shipment.carrier)}
+                    <strong>Carrier:</strong> {nameCache[shipment.carrier?.toLowerCase()] || ""}
                 </div>
                 <div className="detail-row">
-                  <strong>Buyer:</strong> {formatAddress(shipment.buyer)}
+                    <strong>Buyer:</strong> {nameCache[shipment.buyer?.toLowerCase()] || ""}
                 </div>
                 <div className="detail-row">
                   <strong>Created:</strong>{" "}

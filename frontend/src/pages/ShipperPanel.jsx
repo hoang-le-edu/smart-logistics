@@ -43,6 +43,22 @@ export default function ShipperPanel({ account, chainId }) {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
+  const [nameCache, setNameCache] = useState({});
+
+  const fetchName = async (address) => {
+    if (!address) return "";
+    const key = address.toLowerCase();
+    if (nameCache[key] !== undefined) return nameCache[key];
+    try {
+      const registry = await getShipmentRegistry();
+      const name = await registry.displayName(address);
+      setNameCache((prev) => ({ ...prev, [key]: name }));
+      return name;
+    } catch {
+      setNameCache((prev) => ({ ...prev, [key]: "" }));
+      return "";
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -436,7 +452,7 @@ export default function ShipperPanel({ account, chainId }) {
               </div>
               <div className="card-body">
                 <p>
-                  <strong>Buyer:</strong> {o.buyer.slice(0, 10)}...
+                  <strong>Buyer:</strong> {nameCache[o.buyer?.toLowerCase()] ?? ""}
                 </p>
                 <p>
                   <strong>Created:</strong>{" "}

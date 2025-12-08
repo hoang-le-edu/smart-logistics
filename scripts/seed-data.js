@@ -28,20 +28,51 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+// Use node-fetch + form-data for Pinata multipart uploads (reliable with Pinata API)
 const FormData = require("form-data");
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
-function getArgFlag(name, defaultVal) {
-  const idx = process.argv.findIndex((a) => a === `--${name}`);
-  if (idx >= 0) {
-    const val = process.argv[idx + 1];
-    if (val === undefined || val.startsWith("--")) return true;
-    if (val === "true") return true;
-    if (val === "false") return false;
-    const n = Number(val);
-    return Number.isNaN(n) ? val : n;
+// Read configuration primarily from environment variables to avoid Hardhat CLI param validation.
+function getConfig(name, defaultVal) {
+  const envVal = process.env[name.toUpperCase()];
+  if (envVal === undefined) return defaultVal;
+  if (envVal === "true") return true;
+  if (envVal === "false") return false;
+  const n = Number(envVal);
+  return Number.isNaN(n) ? envVal : n;
+}
+
+// Ensure the docs directory exists and has at least one PDF and one Photo
+function ensureFakeDocs(docsDir) {
+  if (!docsDir) return;
+  const abs = path.resolve(docsDir);
+  try {
+    if (!fs.existsSync(abs)) {
+      fs.mkdirSync(abs, { recursive: true });
+    }
+    // Create a minimal valid PDF if none present
+    const hasPdf = fs.existsSync(abs) && fs.readdirSync(abs).some((f) => [".pdf"].includes(path.extname(f).toLowerCase()));
+    if (!hasPdf) {
+      const pdfPath = path.join(abs, "sample.pdf");
+      const pdfContent = Buffer.from(
+        "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R>>endobj\n4 0 obj<</Length 44>>stream\nBT /F1 24 Tf 72 120 Td (Seed PDF) Tj ET\nendstream endobj\nxref\n0 5\n0000000000 65535 f \n0000000010 00000 n \n0000000071 00000 n \n0000000132 00000 n \n0000000240 00000 n \ntrailer<</Size 5/Root 1 0 R>>\nstartxref\n330\n%%EOF\n",
+        "utf8"
+      );
+      fs.writeFileSync(pdfPath, pdfContent);
+      console.log(`✓ Created placeholder PDF at ${pdfPath}`);
+    }
+    // Create a minimal PNG if none present
+    const hasPhoto = fs.existsSync(abs) && fs.readdirSync(abs).some((f) => [".png", ".jpg", ".jpeg"].includes(path.extname(f).toLowerCase()));
+    if (!hasPhoto) {
+      const pngPath = path.join(abs, "sample.png");
+      // Minimal 1x1 PNG (base64)
+      const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+      fs.writeFileSync(pngPath, Buffer.from(pngBase64, "base64"));
+      console.log(`✓ Created placeholder PNG at ${pngPath}`);
+    }
+  } catch (e) {
+    console.warn("ensureFakeDocs warning:", e.message);
   }
-  return defaultVal;
 }
 
 function randomCidV0() {
@@ -59,12 +90,19 @@ async function maybePinFileToPinata(filePath) {
     const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
     const fileName = path.basename(filePath);
     const form = new FormData();
+    // Append file stream with filename so Pinata recognizes the part correctly
     form.append("file", fs.createReadStream(filePath), fileName);
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
-      body: form,
-    });
+    // Optional metadata/options to satisfy Pinata parser
+    form.append(
+      "pinataMetadata",
+      JSON.stringify({ name: fileName })
+    );
+    form.append(
+      "pinataOptions",
+      JSON.stringify({ cidVersion: 1 })
+    );
+    const headers = { Authorization: `Bearer ${jwt}`, ...form.getHeaders() };
+    const res = await fetch(url, { method: "POST", headers, body: form });
     if (!res.ok) {
       const t = await res.text();
       console.warn(`Pinata upload failed for ${fileName}:`, t);
@@ -81,6 +119,8 @@ async function maybePinFileToPinata(filePath) {
 async function collectDocCids(docsDir) {
   if (!docsDir) return { pdfs: [], photos: [], jsons: [], all: [] };
   const abs = path.resolve(docsDir);
+  // Create placeholder docs when missing so we can always attach 3 types
+  ensureFakeDocs(abs);
   if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
     console.warn(`Docs dir not found: ${abs}`);
     return { pdfs: [], photos: [], jsons: [], all: [] };
@@ -105,9 +145,9 @@ async function collectDocCids(docsDir) {
 }
 
 async function main() {
-  const ordersCount = getArgFlag("orders", 3);
-  const includeDelivered = !!getArgFlag("deliver", false);
-  const docsDir = getArgFlag("docsDir", "D:/VyMinh/smart-logistics/fake-data");
+  const ordersCount = getConfig("orders", 3);
+  const includeDelivered = !!getConfig("deliver", false);
+  const docsDir = getConfig("docsdir", "D:/VyMinh/smart-logistics/fake-data");
 
   // Load deployment addresses
   const deploymentFile = path.join(

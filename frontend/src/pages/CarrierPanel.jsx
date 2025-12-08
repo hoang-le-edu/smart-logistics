@@ -4,6 +4,7 @@ import { ShipmentRegistryABI } from "../abis";
 import { EscrowMilestoneABI } from "../abis";
 import {
   getContract,
+  getShipmentRegistry,
   handleTransaction,
   parseContractError,
   getMilestoneStatusName,
@@ -32,6 +33,22 @@ export default function CarrierPanel({ account, chainId }) {
   const [error, setError] = useState("");
   const [viewingShipment, setViewingShipment] = useState(null);
   const [txHash, setTxHash] = useState("");
+  const [nameCache, setNameCache] = useState({});
+
+  const fetchName = async (address) => {
+    if (!address) return "";
+    const key = address.toLowerCase();
+    if (nameCache[key] !== undefined) return nameCache[key];
+    try {
+      const registry = await getShipmentRegistry();
+      const name = await registry.displayName(address);
+      setNameCache((prev) => ({ ...prev, [key]: name }));
+      return name;
+    } catch (e) {
+      setNameCache((prev) => ({ ...prev, [key]: "" }));
+      return "";
+    }
+  };
 
   // Pagination state
   const [displayedShipmentsCount, setDisplayedShipmentsCount] = useState(5);
@@ -63,6 +80,19 @@ export default function CarrierPanel({ account, chainId }) {
       loadAvailableShipments();
     }
   }, [account, chainId]);
+
+  useEffect(() => {
+    const addrs = new Set();
+    availableShipments.forEach((s) => {
+      if (s.staff) addrs.add(s.staff.toLowerCase());
+      if (s.buyer) addrs.add(s.buyer.toLowerCase());
+    });
+    shipments.forEach((s) => {
+      if (s.staff) addrs.add(s.staff.toLowerCase());
+      if (s.buyer) addrs.add(s.buyer.toLowerCase());
+    });
+    addrs.forEach((a) => fetchName(a));
+  }, [availableShipments, shipments]);
 
   const loadCarrierShipments = async () => {
     if (!account) return;
@@ -674,10 +704,10 @@ export default function CarrierPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Staff:</strong> {s.staff.slice(0, 10)}...
+                      <strong>Staff:</strong> {nameCache[s.staff?.toLowerCase()] ?? ""}
                     </p>
                     <p>
-                      <strong>Buyer:</strong> {s.buyer.slice(0, 10)}...
+                      <strong>Buyer:</strong> {nameCache[s.buyer?.toLowerCase()] ?? ""}
                     </p>
                     <p>
                       <strong>Created:</strong>{" "}
@@ -702,7 +732,7 @@ export default function CarrierPanel({ account, chainId }) {
                   </div>
                   <div
                     className="card-actions"
-                    style={{ padding: "8px 16px 16px" }}
+                    style={{ padding: "8px 16px 16px 0" }}
                   >
                     {s.status === 0 ? (
                       <button
@@ -711,7 +741,7 @@ export default function CarrierPanel({ account, chainId }) {
                         disabled={loading}
                         onClick={() => acceptShipment(s.id)}
                       >
-                        Accept
+                        Mark Picked Up
                       </button>
                     ) : (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -771,11 +801,10 @@ export default function CarrierPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Staff:</strong> {shipment.staff.slice(0, 10)}
-                      ...
+                      <strong>Staff:</strong> {nameCache[shipment.staff?.toLowerCase()] ?? ""}
                     </p>
                     <p>
-                      <strong>Buyer:</strong> {shipment.buyer.slice(0, 10)}...
+                      <strong>Buyer:</strong> {nameCache[shipment.buyer?.toLowerCase()] ?? ""}
                     </p>
                     <p>
                       <strong>Created:</strong>{" "}

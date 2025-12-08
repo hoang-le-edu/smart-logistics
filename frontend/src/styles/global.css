@@ -1,0 +1,40 @@
+/* Global font normalization */
+:root {
+  --app-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body {
+  font-family: var(--app-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, select, textarea, label, p, span, div, h1, h2, h3, h4, h5, h6 {
+  font-family: var(--app-font-family);
+}
+
+/* Optional: unify code font */
+code, pre, kbd, samp {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Wallet UI normalization */
+.connect-wallet .address,
+.connect-wallet .network,
+.connect-wallet .balance {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.connect-wallet .wallet-info,
+.connect-wallet .wallet-connect-section {
+  background: transparent;
+}
+
+.connect-wallet .disconnect-button,
+.connect-wallet .connect-button,
+.connect-wallet .switch-network-button {
+  font-weight: 600;
+}

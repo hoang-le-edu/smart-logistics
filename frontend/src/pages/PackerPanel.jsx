@@ -12,6 +12,22 @@ export default function PackerPanel({ account, chainId }) {
   const [displayCount, setDisplayCount] = useState(5); // Start with 5 records
   const [totalAvailable, setTotalAvailable] = useState(0);
   const RECORDS_PER_PAGE = 5;
+  const [nameCache, setNameCache] = useState({});
+
+  async function getDisplayName(address) {
+    if (!address) return "";
+    const key = address.toLowerCase();
+    if (nameCache[key] !== undefined) return nameCache[key];
+    try {
+      const registry = await getShipmentRegistry();
+      const name = await registry.displayName(address);
+      setNameCache((prev) => ({ ...prev, [key]: name }));
+      return name;
+    } catch (e) {
+      setNameCache((prev) => ({ ...prev, [key]: "" }));
+      return "";
+    }
+  }
 
   useEffect(() => {
     if (account) {
@@ -56,6 +72,17 @@ export default function PackerPanel({ account, chainId }) {
 
       setShipments(pending);
       setTotalAvailable(Number(totalShipments));
+      // Prefetch names to avoid flicker
+      const addrs = new Set();
+      pending.forEach((p) => {
+        if (p.staff) addrs.add(p.staff.toLowerCase());
+        if (p.carrier) addrs.add(p.carrier.toLowerCase());
+        if (p.buyer) addrs.add(p.buyer.toLowerCase());
+      });
+      for (const addr of addrs) {
+        // fire and forget
+        getDisplayName(addr);
+      }
       setError("");
     } catch (error) {
       console.error("Error loading shipments:", error);
@@ -159,30 +186,30 @@ export default function PackerPanel({ account, chainId }) {
 
               <div className="card-body">
                 <div className="info-row">
-                  <span className="label">Staff:</span>
-                  <span className="value address">
-                    {shipment.staff.slice(0, 10)}...
+                  <span className="label">Staff: </span>
+                  <span className="value">
+                    {nameCache[shipment.staff?.toLowerCase()] ?? ""}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="label">Carrier:</span>
-                  <span className="value address">
-                    {shipment.carrier.slice(0, 10)}...
+                  <span className="label">Carrier: </span>
+                  <span className="value">
+                    {nameCache[shipment.carrier?.toLowerCase()] ?? ""}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="label">Buyer:</span>
-                  <span className="value address">
-                    {shipment.buyer.slice(0, 10)}...
+                  <span className="label">Buyer: </span>
+                  <span className="value">
+                    {nameCache[shipment.buyer?.toLowerCase()] ?? ""}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="label">Created:</span>
+                  <span className="label">Created: </span>
                   <span className="value">{shipment.createdAt}</span>
                 </div>
               </div>
 
-              <div className="card-actions">
+              <div className="card-actions" style={{ marginTop: 8 }}>
                 <button
                   className="btn-primary"
                   onClick={() => markPickedUp(shipment.id)}

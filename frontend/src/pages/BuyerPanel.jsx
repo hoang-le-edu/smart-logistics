@@ -58,6 +58,9 @@ export default function BuyerPanel({ account, chainId }) {
 
   useEffect(() => {
     if (account) {
+      // Auto-fill origin from predefined shipping config and lock it
+      const defaultOrigin = (import.meta && import.meta.env && import.meta.env.VITE_DEFAULT_ORIGIN) || "UIT HCMC";
+      setOrderForm((prev) => ({ ...prev, origin: defaultOrigin }));
       loadBuyerData();
     }
   }, [account, chainId]);
@@ -121,9 +124,28 @@ export default function BuyerPanel({ account, chainId }) {
         })
       );
 
-      const filteredShipments = shipmentsData.filter((s) => s !== null);
-      setAllShipments(filteredShipments);
-      setShipments(filteredShipments.slice(0, displayedShipmentsCount));
+      setShipments(shipmentsData.filter((s) => s !== null));
+      // Prefetch display names for involved addresses to avoid UI flicker
+      const addrs = new Set();
+      for (const s of shipmentsData) {
+        if (!s) continue;
+        if (s.staff) addrs.add(s.staff.toLowerCase());
+        if (s.carrier) addrs.add(s.carrier.toLowerCase());
+        if (s.buyer) addrs.add(s.buyer.toLowerCase());
+      }
+      try {
+        const nameMap = { ...nameCache };
+        for (const a of addrs) {
+          if (nameMap[a] === undefined) {
+            const nm = await fetchDisplayName(a);
+            nameMap[a] = nm || "";
+          }
+        }
+        setNameCache(nameMap);
+        setNamesReady(true);
+      } catch (_) {
+        setNamesReady(true);
+      }
 
       // Load my orders from logs
       try {
@@ -163,6 +185,31 @@ export default function BuyerPanel({ account, chainId }) {
     }
   };
 
+  // Low-level fetcher for display name (no state updates here)
+  const fetchDisplayName = async (addr) => {
+    if (!addr) return "";
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        provider,
+        chainId
+      );
+      const name = await registry.displayName(addr);
+      return name || "";
+    } catch (e) {
+      return "";
+    }
+  };
+
+  // Small helper component to show display name or fallback to truncated address
+  const InlineName = ({ address }) => {
+    const key = (address || "").toLowerCase();
+    const nm = nameCache[key] || "";
+    return <span>{nm}</span>;
+  };
+
   const loadEscrowDetails = async (shipmentId) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -196,6 +243,8 @@ export default function BuyerPanel({ account, chainId }) {
 
   const handleOrderInput = (e) => {
     const { name, value } = e.target;
+    // Prevent editing origin; it's auto-filled from config
+    if (name === "origin") return;
     setOrderForm((prev) => ({ ...prev, [name]: value }));
 
     // Auto-calculate shipping fee when destination changes
@@ -707,7 +756,8 @@ export default function BuyerPanel({ account, chainId }) {
               name="origin"
               className="form-input"
               value={orderForm.origin}
-              onChange={handleOrderInput}
+              readOnly
+              disabled
               placeholder="TP.HCM, VN"
             />
           </div>
@@ -939,12 +989,10 @@ export default function BuyerPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Staff:</strong> {shipment.staff.slice(0, 10)}
-                      ...
+                      <strong>Staff:</strong> <InlineName address={shipment.staff} />
                     </p>
                     <p>
-                      <strong>Carrier:</strong> {shipment.carrier.slice(0, 10)}
-                      ...
+                      <strong>Carrier:</strong> <InlineName address={shipment.carrier} />
                     </p>
                     <p>
                       <strong>Created:</strong>{" "}
