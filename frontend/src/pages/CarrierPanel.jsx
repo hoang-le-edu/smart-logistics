@@ -846,14 +846,14 @@ export default function CarrierPanel({ account, chainId }) {
                       <div style={{ marginTop: 8 }}>
                         <button
                           className="action-button"
-                          style={{ backgroundColor: "#000", color: "#fff" }}
+                          style={{ backgroundColor: "#dc2626", color: "#fff" }}
                           disabled={loading}
                           onClick={(e) => {
                             e.stopPropagation();
                             openCancelModal(shipment.id);
                           }}
                         >
-                          Cancel
+                          Mark Failed
                         </button>
                       </div>
                     </div>
@@ -889,10 +889,13 @@ export default function CarrierPanel({ account, chainId }) {
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 style={{ marginTop: 0 }}>Cancel Shipment</h3>
+              <h3 style={{ marginTop: 0 }}>Mark Shipment as Failed</h3>
+              <p style={{ color: "#6b7280", marginBottom: 16 }}>
+                This will refund remaining escrow balance to the buyer.
+              </p>
               <div className="form-group">
                 <label htmlFor="cancelReasonModal">
-                  Reason <span className="required">*</span>
+                  Failure Reason <span className="required">*</span>
                 </label>
                 <textarea
                   id="cancelReasonModal"

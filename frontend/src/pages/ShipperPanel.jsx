@@ -245,19 +245,18 @@ export default function ShipperPanel({ account, chainId }) {
       };
 
       const prefilledFee = normalizeFee(data.shippingFee);
-      setFormData((prev) => ({
-        ...prev,
-        description: data.productName || data.description || prev.description,
-        origin: data.origin || prev.origin,
-        destination: data.destination || prev.destination,
-        weight: prev.weight, // Buyer does not provide weight; shipper will input
-        items: (data.quantity ?? data.items) || prev.items,
-        // Prefill shipping fee if present in order metadata
+      setFormData({
+        description: data.productName || data.description || "",
+        origin: data.origin || "",
+        destination: data.destination || "",
+        weight: "", // Admin will input weight
+        items: (data.quantity ?? data.items) || "",
         shippingFee:
           typeof data.shippingFee !== "undefined" && data.shippingFee !== null
             ? prefilledFee
-            : prev.shippingFee,
-      }));
+            : "",
+        manualBuyerAddress: order.buyer || "",
+      });
       setSelectedOrder(order);
     } catch (e) {
       console.warn("Prefill failed", e);
@@ -283,8 +282,10 @@ export default function ShipperPanel({ account, chainId }) {
     if (!validateForm()) {
       return;
     }
-    if (!selectedOrder) {
-      setError("Please select an order (Prefill) first");
+    
+    // Require order selection unless creating without order
+    if (!selectedOrder && !createWithoutOrder) {
+      setError("Please select an order (Prefill) or check 'Create without order'");
       return;
     }
 
@@ -305,9 +306,9 @@ export default function ShipperPanel({ account, chainId }) {
           weight: formData.weight,
           items: formData.items,
           shippingFee: formData.shippingFee,
-          buyer: selectedOrder.buyer,
-          orderCid: selectedOrder.cid,
-          orderId: selectedOrder.orderId,
+          buyer: selectedOrder?.buyer || formData.manualBuyerAddress,
+          orderCid: selectedOrder?.cid || "",
+          orderId: selectedOrder?.orderId || "",
         };
 
         const ipfsResult = await uploadShipmentMetadata(metadata);
@@ -342,7 +343,7 @@ export default function ShipperPanel({ account, chainId }) {
       // Determine buyer address
       const buyerAddress = createWithoutOrder
         ? formData.manualBuyerAddress
-        : selectedOrder.buyer;
+        : (selectedOrder?.buyer || formData.manualBuyerAddress);
 
       if (!buyerAddress || !ethers.isAddress(buyerAddress)) {
         setError("Valid buyer address is required");
@@ -354,11 +355,14 @@ export default function ShipperPanel({ account, chainId }) {
       // Ensure non-zero shipping fee for auto-escrow
       const shippingFeeParam = (() => {
         if (!useAutoEscrow) return 0n;
-        const feeNum = Number(formData.shippingFee);
-        if (!isNaN(feeNum) && feeNum > 0) {
-          return ethers.parseEther(String(feeNum));
+        const feeStr = String(formData.shippingFee || "0").trim();
+        if (!feeStr || feeStr === "0") return 0n;
+        try {
+          return ethers.parseEther(feeStr);
+        } catch (err) {
+          console.warn("Failed to parse shipping fee:", feeStr, err);
+          return 0n;
         }
-        return 0n;
       })();
 
       const receipt = await handleTransaction(
@@ -584,8 +588,13 @@ export default function ShipperPanel({ account, chainId }) {
                 required={createWithoutOrder}
                 className="form-input"
                 placeholder="0x..."
+                disabled={!!selectedOrder}
               />
-              <p className="hint">Enter the buyer's wallet address</p>
+              <p className="hint">
+                {selectedOrder 
+                  ? "Buyer address from selected order" 
+                  : "Enter the buyer's wallet address"}
+              </p>
             </div>
           )}
         </div>
