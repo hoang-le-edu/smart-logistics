@@ -6,6 +6,9 @@ export default function PackerPanel({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingDoc, setUploadingDoc] = useState(null);
+  const [uploadedSuccess, setUploadedSuccess] = useState(null);
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (account) {
@@ -42,9 +45,10 @@ export default function PackerPanel({ account, chainId }) {
       }
 
       setShipments(pending);
+      setError("");
     } catch (error) {
       console.error("Error loading shipments:", error);
-      alert("Failed to load shipments: " + error.message);
+      setError("Failed to load shipments: " + (error?.message || String(error)));
     } finally {
       setLoading(false);
     }
@@ -56,11 +60,13 @@ export default function PackerPanel({ account, chainId }) {
       // Contract now allows PICKED_UP without an assigned carrier; carrier will self-assign at IN_TRANSIT
       const tx = await registry.updateMilestone(shipmentId, 1); // PICKED_UP
       await tx.wait();
-      alert("Shipment marked as picked up!");
+      setSuccess(`Shipment #${shipmentId} marked as PICKED_UP!`);
+      setError("");
       loadPendingShipments();
     } catch (error) {
       console.error("Error updating milestone:", error);
-      alert("Failed to mark as picked up: " + error.message);
+      setError("Failed to mark as picked up: " + (error?.message || String(error)));
+      setSuccess("");
     }
   }
 
@@ -79,12 +85,14 @@ export default function PackerPanel({ account, chainId }) {
         result.cid
       );
       await tx.wait();
-
-      alert("Document uploaded successfully!");
+      setSuccess("Packing document uploaded successfully!");
+      setUploadedSuccess(shipmentId);
+      setError("");
       setUploadingDoc(null);
     } catch (error) {
       console.error("Error uploading document:", error);
-      alert("Failed to upload document: " + error.message);
+      setError("Failed to upload document: " + (error?.message || String(error)));
+      setSuccess("");
       setUploadingDoc(null);
     }
   }
@@ -105,6 +113,17 @@ export default function PackerPanel({ account, chainId }) {
           Mark shipments as picked up and upload packing documents
         </p>
       </div>
+
+      {error && (
+        <div className="alert alert-error">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+      {success && (
+        <div className="alert alert-success">
+          <strong>Success:</strong> {success}
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-state">Loading pending shipments...</div>
@@ -151,18 +170,22 @@ export default function PackerPanel({ account, chainId }) {
                   className="btn-primary"
                   onClick={() => markPickedUp(shipment.id)}
                 >
-                  ✓ Mark as Picked Up
+                  Mark as Picked Up
                 </button>
 
                 <label className="btn-secondary file-upload-label">
-                  {uploadingDoc === shipment.id
-                    ? "Uploading..."
-                    : "📄 Upload Packing List"}
+                    {uploadingDoc === shipment.id
+                      ? "Uploading..."
+                      : uploadedSuccess === shipment.id
+                      ? "Upload Success"
+                      : "Upload Document"}
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png"
                     onChange={(e) => {
                       if (e.target.files[0]) {
+                          // Reset success indicator for a new upload attempt
+                          setUploadedSuccess(null);
                         uploadPackingDocument(shipment.id, e.target.files[0]);
                       }
                     }}

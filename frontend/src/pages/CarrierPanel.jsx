@@ -22,6 +22,7 @@ export default function CarrierPanel({ account, chainId }) {
   const [cancelReason, setCancelReason] = useState("");
   const [proofFile, setProofFile] = useState(null);
   const [uploadingTransitDoc, setUploadingTransitDoc] = useState(null);
+  const [uploadedTransitDocSuccessId, setUploadedTransitDocSuccessId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
@@ -156,6 +157,7 @@ export default function CarrierPanel({ account, chainId }) {
   const uploadTransitDocument = async (shipmentId, file) => {
     try {
       setUploadingTransitDoc(shipmentId);
+      setUploadedTransitDocSuccessId(null);
       if (!file) {
         setError("Please select a document to upload");
         setUploadingTransitDoc(null);
@@ -179,6 +181,12 @@ export default function CarrierPanel({ account, chainId }) {
         () => registry.attachDocument(shipmentId, "Transit Proof", result.cid),
         async () => {
           setSuccess("Transit document uploaded successfully!");
+          setUploadedTransitDocSuccessId(shipmentId);
+          // Auto-revert the success label back to "Upload Document" after a few seconds
+          setTimeout(() => {
+            // Only clear if still pointing to the same shipment
+            setUploadedTransitDocSuccessId((curr) => (curr === shipmentId ? null : curr));
+          }, 3000);
           // Refresh lists to reflect any changes
           await loadCarrierShipments();
           await loadAvailableShipments();
@@ -190,6 +198,8 @@ export default function CarrierPanel({ account, chainId }) {
       setError(parseContractError(err));
     } finally {
       setUploadingTransitDoc(null);
+      // If there was an error, ensure label returns to default state
+      setUploadedTransitDocSuccessId((curr) => (curr === shipmentId ? curr : curr));
     }
   };
 
@@ -674,8 +684,12 @@ export default function CarrierPanel({ account, chainId }) {
                         >
                           Mark In Transit
                         </button>
-                        <label className="action-button" style={{ backgroundColor: "#000", color: "#fff" }}>
-                          {uploadingTransitDoc === s.id ? "Uploading..." : "Upload Transit Proof"}
+                        <label className="action-button" >
+                          {uploadingTransitDoc === s.id
+                            ? "Uploading..."
+                            : uploadedTransitDocSuccessId === s.id
+                            ? "Upload Success"
+                            : "Upload Document"}
                           <input
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png,.json"
@@ -709,10 +723,7 @@ export default function CarrierPanel({ account, chainId }) {
               {shipments.map((shipment) => (
                 <div
                   key={shipment.id}
-                  className={`shipment-card ${
-                    selectedShipment?.id === shipment.id ? "selected" : ""
-                  }`}
-                  onClick={() => selectShipment(shipment)}
+                  className={`shipment-card`}
                 >
                   <div className="card-header">
                     <h4>Shipment #{shipment.id}</h4>
@@ -762,10 +773,13 @@ export default function CarrierPanel({ account, chainId }) {
                         </button>
                         <label
                           className="action-button"
-                          style={{ backgroundColor: "#000", color: "#fff" }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {uploadingTransitDoc === shipment.id ? "Uploading..." : "Upload Document"}
+                          {uploadingTransitDoc === shipment.id
+                            ? "Uploading..."
+                            : uploadedTransitDocSuccessId === shipment.id
+                            ? "Upload Success"
+                            : "Upload Document"}
                           <input
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png,.json"
@@ -862,134 +876,7 @@ export default function CarrierPanel({ account, chainId }) {
           </div>
         )}
 
-        {selectedShipment && (
-          <div className="update-form">
-            <h3>Update Milestone for Shipment #{selectedShipment.id}</h3>
-
-            <form onSubmit={updateMilestone}>
-              <div className="form-group">
-                <label htmlFor="currentStatus">Current Status</label>
-                <input
-                  type="text"
-                  id="currentStatus"
-                  value={getMilestoneStatusName(
-                    selectedShipment.milestoneStatus
-                  )}
-                  disabled
-                  className="form-input disabled"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="milestone">
-                  New Milestone Status <span className="required">*</span>
-                </label>
-                <select
-                  id="milestone"
-                  value={selectedMilestone}
-                  onChange={(e) => setSelectedMilestone(Number(e.target.value))}
-                  className="form-select"
-                  required
-                >
-                  {milestoneOptions.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      disabled={
-                        !canUpdateMilestone(
-                          selectedShipment.milestoneStatus,
-                          option.value
-                        )
-                      }
-                    >
-                      {option.label}
-                      {!canUpdateMilestone(
-                        selectedShipment.milestoneStatus,
-                        option.value
-                      ) && " (unavailable)"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedMilestone === 5 && (
-                <div className="form-group">
-                  <label htmlFor="cancelReason">
-                    Cancel Reason <span className="required">*</span>
-                  </label>
-                  <textarea
-                    id="cancelReason"
-                    value={cancelReason}
-                    onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder="Provide a clear reason for cancellation"
-                    rows={3}
-                    className="form-textarea"
-                    required
-                  />
-                </div>
-              )}
-
-              <div className="form-group">
-                <label htmlFor="proof">
-                  Attach Proof Document (Photo, Signature, GPS, etc.)
-                </label>
-                <input
-                  type="file"
-                  id="proof"
-                  onChange={handleFileChange}
-                  accept=".pdf,.jpg,.jpeg,.png,.json"
-                  className="form-file"
-                  style={{ color: "#000", backgroundColor: "#fff" }}
-                />
-                <div style={{ marginTop: 6, color: "#000" }}>
-                  {proofFile
-                    ? `Selected: ${proofFile.name}`
-                    : "No file selected"}
-                </div>
-                {!isPinataConfigured() && (
-                  <p className="hint warning">
-                    ⚠️ IPFS not configured. Files won't be uploaded.
-                  </p>
-                )}
-              </div>
-
-              <div className="form-actions">
-                <button
-                  type="button"
-                  onClick={() => setSelectedShipment(null)}
-                  className="cancel-button"
-                  disabled={loading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="submit-button"
-                >
-                  {loading ? "Updating..." : "Update Milestone"}
-                </button>
-              </div>
-
-              {error && (
-                <div className="alert alert-error">
-                  <strong>Error:</strong> {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="alert alert-success">
-                  <strong>Success:</strong> {success}
-                  {txHash && (
-                    <p className="tx-hash">
-                      Transaction: <code>{txHash}</code>
-                    </p>
-                  )}
-                </div>
-              )}
-            </form>
-          </div>
-        )}
+        
       </div>
     </div>
   );

@@ -28,6 +28,8 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const FormData = require("form-data");
+const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 function getArgFlag(name, defaultVal) {
   const idx = process.argv.findIndex((a) => a === `--${name}`);
@@ -77,26 +79,35 @@ async function maybePinFileToPinata(filePath) {
 }
 
 async function collectDocCids(docsDir) {
-  if (!docsDir) return [];
+  if (!docsDir) return { pdfs: [], photos: [], jsons: [], all: [] };
   const abs = path.resolve(docsDir);
   if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
     console.warn(`Docs dir not found: ${abs}`);
-    return [];
+    return { pdfs: [], photos: [], jsons: [], all: [] };
   }
   const entries = fs.readdirSync(abs).filter((f) => fs.statSync(path.join(abs, f)).isFile());
-  const cids = [];
+  const pdfs = [], photos = [], jsons = [], all = [];
   for (const f of entries) {
+    const ext = path.extname(f).toLowerCase();
+    const isPdf = ext === ".pdf";
+    const isPhoto = ext === ".png" || ext === ".jpg" || ext === ".jpeg";
+    const isJson = ext === ".json";
     const fp = path.join(abs, f);
     const uploaded = await maybePinFileToPinata(fp);
-    cids.push({ name: f, cid: uploaded || randomCidV0() });
+    const cid = uploaded || randomCidV0();
+    const rec = { name: f, cid, type: isPdf ? "PDF" : isPhoto ? "Photo" : isJson ? "JSON" : "Doc" };
+    all.push(rec);
+    if (isPdf) pdfs.push(rec);
+    else if (isPhoto) photos.push(rec);
+    else if (isJson) jsons.push(rec);
   }
-  return cids;
+  return { pdfs, photos, jsons, all };
 }
 
 async function main() {
   const ordersCount = getArgFlag("orders", 3);
   const includeDelivered = !!getArgFlag("deliver", false);
-  const docsDir = getArgFlag("docsDir", null);
+  const docsDir = getArgFlag("docsDir", "D:/VyMinh/smart-logistics/fake-data");
 
   // Load deployment addresses
   const deploymentFile = path.join(
@@ -160,9 +171,19 @@ async function main() {
 
   // Optionally collect document CIDs
   const docCids = await collectDocCids(docsDir);
-  const toDocArrays = (count) => {
-    const cids = docCids.slice(0, count).map((d) => d.cid);
-    const types = docCids.slice(0, count).map((d) => d.name || "Doc");
+  const toThreeDocArrays = () => {
+    const parts = [];
+    if (docCids.pdfs.length > 0) parts.push(docCids.pdfs[0]);
+    if (docCids.photos.length > 0) {
+      const idx = Math.floor(Math.random() * docCids.photos.length);
+      const chosen = docCids.photos[idx];
+      const ext = path.extname(chosen.name).toLowerCase();
+      const photoName = `shipment-photo-${Math.floor(Math.random() * 100000)}${ext}`;
+      parts.push({ ...chosen, name: photoName, type: "Photo" });
+    }
+    if (docCids.jsons.length > 0) parts.push(docCids.jsons[0]);
+    const cids = parts.map((d) => d.cid);
+    const types = parts.map((d) => d.type);
     return { cids, types };
   };
 
@@ -189,7 +210,7 @@ async function main() {
   const createShipment = async ({ buyer, shippingFee, meta, docs }) => {
     const regStaff = registry.connect(staffW);
     const metadataCid = JSON.stringify(meta);
-    const { cids, types } = docs || { cids: [], types: [] };
+    const { cids, types } = docs || toThreeDocArrays();
     const tx = await regStaff.createShipment(buyer, metadataCid, cids, types, shippingFee);
     const rc = await tx.wait();
     const ev = rc.logs.find((l) => l.fragment && l.fragment.name === "ShipmentCreated");
@@ -220,8 +241,7 @@ async function main() {
   // A) CREATED (no escrow; shippingFee=0)
   {
     const meta = { description: "Seed CREATED", origin: "UIT", destination: "District 1" };
-    const { cids, types } = toDocArrays(1);
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 0, meta, docs: { cids, types } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 0, meta });
     results.push({ id: r.shipmentId, state: "CREATED", tx: r.txHash });
     console.log(`  - CREATED:  #${r.shipmentId}  tx:${r.txHash}`);
   }
@@ -229,7 +249,7 @@ async function main() {
   // B) PICKED_UP
   {
     const meta = { description: "Seed PICKED_UP", origin: "UIT", destination: "Thu Duc" };
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 120, meta, docs: { cids: [], types: [] } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 120, meta });
     await accept(r.shipmentId);
     await move(packerW, r.shipmentId, 1); // PICKED_UP
     results.push({ id: r.shipmentId, state: "PICKED_UP", tx: r.txHash });
@@ -239,7 +259,7 @@ async function main() {
   // C) IN_TRANSIT
   {
     const meta = { description: "Seed IN_TRANSIT", origin: "UIT", destination: "Hanoi" };
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 150, meta, docs: { cids: [], types: [] } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 150, meta });
     await accept(r.shipmentId);
     await move(packerW, r.shipmentId, 1); // to PICKED_UP
     await move(carrierW, r.shipmentId, 2); // to IN_TRANSIT
@@ -250,7 +270,7 @@ async function main() {
   // D) ARRIVED
   {
     const meta = { description: "Seed ARRIVED", origin: "UIT", destination: "Da Nang" };
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 180, meta, docs: { cids: [], types: [] } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 180, meta });
     await accept(r.shipmentId);
     await move(packerW, r.shipmentId, 1); // PICKED_UP
     await move(carrierW, r.shipmentId, 2); // IN_TRANSIT
@@ -262,7 +282,7 @@ async function main() {
   // E) FAILED (from IN_TRANSIT)
   {
     const meta = { description: "Seed FAILED", origin: "UIT", destination: "Hai Phong" };
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 200, meta, docs: { cids: [], types: [] } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 200, meta });
     await accept(r.shipmentId);
     await move(packerW, r.shipmentId, 1); // PICKED_UP
     await move(carrierW, r.shipmentId, 2); // IN_TRANSIT
@@ -274,7 +294,7 @@ async function main() {
   // F) DELIVERED (optional)
   if (includeDelivered) {
     const meta = { description: "Seed DELIVERED", origin: "UIT", destination: "Hue" };
-    const r = await createShipment({ buyer: buyerAddr, shippingFee: 220, meta, docs: { cids: [], types: [] } });
+    const r = await createShipment({ buyer: buyerAddr, shippingFee: 220, meta });
     await accept(r.shipmentId);
     await move(packerW, r.shipmentId, 1);
     await move(carrierW, r.shipmentId, 2);
@@ -284,8 +304,7 @@ async function main() {
     console.log(`  - DELIVERED: #${r.shipmentId}`);
   }
 
-  console.log("\nSeed summary:
-----------------------------------------------");
+  console.log("\nSeed summary: ----------------------------------------------");
   for (const r of results) {
     console.log(`#${r.id}  ${r.state}  (tx: ${r.tx})`);
   }
