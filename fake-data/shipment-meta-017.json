@@ -1,0 +1,14 @@
+{
+  "origin": "Kho B, Quan 7, TP Ho Chi Minh",
+  "destination": "78 Duong Tran Hung Dao, Quan 5, TP Ho Chi Minh",
+  "destinationAddress": "78 Duong Tran Hung Dao, Quan 5, TP Ho Chi Minh",
+  "description": "Lo hang tong hop shp-017",
+  "weight": "30.5",
+  "items": "135",
+  "coordinates": {
+    "lat": 10.045,
+    "lng": 105.746
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 26
+}

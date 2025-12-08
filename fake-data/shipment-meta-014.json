@@ -1,0 +1,14 @@
+{
+  "origin": "Kho D, Ha Dong, Ha Noi",
+  "destination": "101 Duong Lach Tray, Ngo Quyen, Hai Phong",
+  "destinationAddress": "101 Duong Lach Tray, Ngo Quyen, Hai Phong",
+  "description": "Lo hang tong hop shp-014",
+  "weight": "26.0",
+  "items": "120",
+  "coordinates": {
+    "lat": 10.737,
+    "lng": 106.721
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 17
+}

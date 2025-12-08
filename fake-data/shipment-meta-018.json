@@ -1,0 +1,14 @@
+{
+  "origin": "Kho C, Thu Duc, TP Ho Chi Minh",
+  "destination": "12 Duong Phan Chu Trinh, Hoan Kiem, Ha Noi",
+  "destinationAddress": "12 Duong Phan Chu Trinh, Hoan Kiem, Ha Noi",
+  "description": "Lo hang tong hop shp-018",
+  "weight": "32.0",
+  "items": "140",
+  "coordinates": {
+    "lat": 20.844,
+    "lng": 106.688
+  },
+  "originTier": "TIER_3",
+  "distanceKm": 29
+}

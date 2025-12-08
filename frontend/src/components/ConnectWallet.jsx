@@ -209,8 +209,8 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
         await registry.DEFAULT_ADMIN_ROLE(),
         addr
       );
-      const isShipper = await registry.hasRole(
-        await registry.SHIPPER_ROLE(),
+      const isStaff = await registry.hasRole(
+        await registry.STAFF_ROLE(),
         addr
       );
       const isPacker = await registry.hasRole(
@@ -225,8 +225,8 @@ export default function ConnectWallet({ onAccountChange, onChainIdChange }) {
       setDisplayName(name || "");
       const r = isAdmin
         ? "Admin"
-        : isShipper
-        ? "Shipper"
+        : isStaff
+        ? "Staff"
         : isPacker
         ? "Packer"
         : isCarrier

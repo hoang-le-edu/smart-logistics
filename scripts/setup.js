@@ -22,22 +22,15 @@ async function main() {
 
   const signers = await hre.ethers.getSigners();
   const admin = signers[0];
-  const shipperAddr =
-    process.env.SHIPPER_ADDRESS ||
-    (signers[1] ? signers[1].address : admin.address);
-  const carrierAddr =
-    process.env.CARRIER_ADDRESS ||
-    (signers[2] ? signers[2].address : admin.address);
-  const buyerAddr =
-    process.env.BUYER_ADDRESS ||
-    (signers[3] ? signers[3].address : admin.address);
-  const packerAddr =
-    process.env.PACKER_ADDRESS ||
-    (signers[4] ? signers[4].address : admin.address);
+  // Fixed role-to-address mapping per user request
+  const staffAddr = hre.ethers.getAddress("0x5df270a6f760cb51d0fca0abf2a34fc244ad3ce3"); // staff -> STAFF_ROLE
+  const carrierAddr = hre.ethers.getAddress("0xa6458d0921a4554ed4db22bf8c3e066f6313bbc3"); // carrier -> CARRIER_ROLE
+  const buyerAddr = hre.ethers.getAddress("0xc92bd76edbfb971be2354c823d718ab5583e9122");   // buyer -> BUYER_ROLE
+  const packerAddr = hre.ethers.getAddress("0x971f6b9f1c7a61963aab36e3f3e4ec3522786362");  // packer -> PACKER_ROLE
 
   console.log("Using accounts:");
   console.log("Admin:     ", admin.address);
-  console.log("Shipper:   ", shipperAddr);
+  console.log("Staff:     ", staffAddr);
   console.log("Carrier:   ", carrierAddr);
   console.log("Buyer:     ", buyerAddr);
   console.log("Packer:    ", packerAddr);
@@ -54,10 +47,19 @@ async function main() {
     EscrowMilestone
   );
 
+  // Verify admin role on Registry
+  const DEFAULT_ADMIN = await registry.DEFAULT_ADMIN_ROLE();
+  const isAdmin = await registry.hasRole(DEFAULT_ADMIN, admin.address);
+  if (!isAdmin) {
+    throw new Error(
+      `Signer ${admin.address} does not have DEFAULT_ADMIN_ROLE on ShipmentRegistry ${ShipmentRegistry}`
+    );
+  }
+
   // Grant roles in ShipmentRegistry
   console.log("Granting roles in ShipmentRegistry...");
-  await registry.grantShipperRole(shipperAddr);
-  console.log("✓ Granted SHIPPER_ROLE to:", shipperAddr);
+  await registry.grantStaffRole(staffAddr);
+  console.log("✓ Granted STAFF_ROLE to:", staffAddr);
 
   await registry.grantCarrierRole(carrierAddr);
   console.log("✓ Granted CARRIER_ROLE to:", carrierAddr);
@@ -67,6 +69,13 @@ async function main() {
 
   await registry.grantPackerRole(packerAddr);
   console.log("✓ Granted PACKER_ROLE to:", packerAddr);
+
+  // Set display names for convenience
+  await registry.setDisplayNameFor(admin.address, "Admin");
+  await registry.setDisplayNameFor(staffAddr, "Staff");
+  await registry.setDisplayNameFor(carrierAddr, "Carrier");
+  await registry.setDisplayNameFor(buyerAddr, "Buyer");
+  await registry.setDisplayNameFor(packerAddr, "Packer");
 
   // Mint tokens to buyer for testing
   console.log("\nMinting tokens to buyer (if MINTER_ROLE available)...");
@@ -112,16 +121,37 @@ async function main() {
   await escrow.grantRole(await escrow.REGISTRY_ROLE(), ShipmentRegistry);
   console.log("✓ grantRole REGISTRY_ROLE to ShipmentRegistry on Escrow");
 
-  // Optional: Create a test shipment
-  if (process.env.CREATE_TEST_SHIPMENT === "true") {
-    console.log("\nCreating test shipment...");
-    const metadataCid = "QmTestShipment123456789ABC";
-    const tx = await registry
-      .connect(shipper)
-      .createShipment(carrier.address, buyer.address, metadataCid);
+  // Initialize shipping fee system (origin + tiers)
+  console.log("\nInitializing shipping fee system...");
+  // Default: UIT (HCMC) coordinates
+  const originLat = 10870493; // 10.8704929 * 1e6
+  const originLon = 106802116; // 106.8021156 * 1e6
+  await registry.setOriginLocation(originLat, originLon);
+  console.log("✓ Origin set to:", `${originLat/1e6}°N, ${originLon/1e6}°E`);
+  await registry.initializeShippingTiers();
+  console.log("✓ Shipping tiers initialized");
+  const tiers = await registry.getShippingTiers();
+  console.log(
+    "Current tiers:",
+    tiers.map((t) => ({ maxDistance: t.maxDistance.toString(), fee: t.fee.toString() }))
+  );
+
+  // Optional: Create a test order (buyer)
+  if (process.env.CREATE_TEST_ORDER === "true") {
+    console.log("\nCreating test order...");
+    const orderCid = JSON.stringify({
+      productName: "Sample",
+      origin: "UIT HCMC",
+      destination: "Hanoi",
+      quantity: 1,
+      shippingFee: 300,
+      createdAt: new Date().toISOString(),
+    });
+    const buyerSigner = await hre.ethers.getSigner(buyerAddr);
+    const regWithBuyer = registry.connect(buyerSigner);
+    const tx = await regWithBuyer.createOrder(orderCid);
     const receipt = await tx.wait();
-    console.log("✓ Test shipment created (ID: 1)");
-    console.log("  Transaction:", receipt.hash);
+    console.log("✓ Test order created. Tx:", receipt.hash);
   }
 
   console.log("\n" + "=".repeat(60));
@@ -131,11 +161,10 @@ async function main() {
   // Sync addresses to frontend .env
   try {
     const frontendEnvPath = path.join(__dirname, "..", "frontend", ".env");
-    const networkKey = hre.network.name.toLowerCase();
-    // Build keys based on network
-    const REGISTRY_KEY = `VITE_${networkKey.toUpperCase()}_REGISTRY_ADDRESS`;
-    const ESCROW_KEY = `VITE_${networkKey.toUpperCase()}_ESCROW_ADDRESS`;
-    const LOGI_KEY = `VITE_${networkKey.toUpperCase()}_LOGITOKEN_ADDRESS`;
+    // Frontend expects generic keys (per contracts.js)
+    const REGISTRY_KEY = `VITE_SHIPMENT_REGISTRY_ADDRESS`;
+    const ESCROW_KEY = `VITE_ESCROW_MILESTONE_ADDRESS`;
+    const LOGI_KEY = `VITE_LOGI_TOKEN_ADDRESS`;
 
     // Read existing .env if present
     let envContent = fs.existsSync(frontendEnvPath)
@@ -163,7 +192,7 @@ async function main() {
     console.warn("Could not update frontend .env:", e.message);
   }
   console.log("Roles granted:");
-  console.log("  SHIPPER:   ", shipperAddr);
+  console.log("  STAFF:     ", staffAddr);
   console.log("  CARRIER:   ", carrierAddr);
   console.log("  BUYER:     ", buyerAddr);
   console.log("  PACKER:    ", packerAddr);

@@ -63,6 +63,13 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
         uint256 milestone
     );
 
+    event AdminPaymentReleased(
+        uint256 indexed shipmentId,
+        address indexed admin,
+        uint256 amount,
+        uint256 milestone
+    );
+
     event EscrowRefunded(
         uint256 indexed shipmentId,
         address indexed buyer,
@@ -254,6 +261,44 @@ contract EscrowMilestone is AccessControl, ReentrancyGuard {
         token.safeTransfer(admin, paymentAmount);
 
         emit PaymentReleased(shipmentId, admin, paymentAmount, milestone);
+    }
+
+    /**
+     * @dev Registry-triggered release to admin. Allows ShipmentRegistry to payout
+     *      specific amounts at milestones directly to admin without carrier call.
+     * Requirements:
+     *  - caller has REGISTRY_ROLE
+     *  - escrow active and not completed
+     *  - amount > 0 and does not exceed remaining balance
+     *  - milestone in [1..4] for event tracking
+     */
+    function releaseToAdmin(
+        uint256 shipmentId,
+        uint256 amount,
+        uint256 milestone
+    ) external onlyRole(REGISTRY_ROLE) nonReentrant {
+        Escrow storage escrow = _escrows[shipmentId];
+        require(escrow.isActive, "Escrow not active");
+        require(!escrow.isCompleted, "Escrow already completed");
+        require(amount > 0, "Amount must be greater than zero");
+        require(milestone >= 1 && milestone <= 4, "Invalid milestone");
+
+        require(
+            escrow.releasedAmount + amount <= escrow.totalAmount,
+            "Payment exceeds total amount"
+        );
+
+        escrow.releasedAmount += amount;
+
+        if (escrow.releasedAmount >= escrow.totalAmount || milestone == 4) {
+            escrow.isCompleted = true;
+            escrow.isActive = false;
+        }
+
+        address admin = IShipmentRegistry(registryAddress).getAdmin();
+        token.safeTransfer(admin, amount);
+
+        emit AdminPaymentReleased(shipmentId, admin, amount, milestone);
     }
 
     /**

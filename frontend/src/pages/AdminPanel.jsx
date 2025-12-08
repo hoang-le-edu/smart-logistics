@@ -26,17 +26,11 @@ export default function AdminPanel({ account, chainId }) {
         signer,
         chainId
       );
-      // Query RoleGranted logs
+      // Query RoleGranted logs via contract queryFilter (more reliable across providers)
+      const logs = await registry.queryFilter(registry.filters.RoleGranted());
       const iface = new ethers.Interface(ShipmentRegistryABI.abi);
-      const topic = iface.getEvent("RoleGranted").topicHash;
-      const logs = await provider.getLogs({
-        address: await registry.getAddress(),
-        topics: [topic],
-        fromBlock: "0x0",
-        toBlock: "latest",
-      });
       const defaultAdminRole = await registry.DEFAULT_ADMIN_ROLE();
-      const shipperRole = await registry.SHIPPER_ROLE();
+      const staffRole = await registry.STAFF_ROLE();
       const packerRole = await registry.PACKER_ROLE();
       const carrierRole = await registry.CARRIER_ROLE();
       const buyerRole = await registry.BUYER_ROLE();
@@ -48,7 +42,7 @@ export default function AdminPanel({ account, chainId }) {
         const roleName =
           roleHex === defaultAdminRole
             ? "ADMIN"
-            : roleHex === shipperRole
+            : roleHex === staffRole
             ? "STAFF"
             : roleHex === packerRole
             ? "PACKER"
@@ -88,7 +82,7 @@ export default function AdminPanel({ account, chainId }) {
       // Filter out entries that no longer have the role (handle revokes)
       const roleHexMap = {
         ADMIN: defaultAdminRole,
-        STAFF: shipperRole,
+        STAFF: staffRole,
         PACKER: packerRole,
         CARRIER: carrierRole,
         BUYER: buyerRole,
@@ -163,7 +157,7 @@ export default function AdminPanel({ account, chainId }) {
       }
     }
 
-    if (role === "STAFF") await run(() => registry.grantShipperRole(address));
+    if (role === "STAFF") await run(() => registry.grantStaffRole(address));
     else if (role === "PACKER")
       await run(() => registry.grantPackerRole(address));
     else if (role === "CARRIER")
@@ -201,7 +195,7 @@ export default function AdminPanel({ account, chainId }) {
   };
 
   const getRoleBytes = async (registry, roleStr) => {
-    if (roleStr === "STAFF") return registry.SHIPPER_ROLE();
+    if (roleStr === "STAFF") return registry.STAFF_ROLE();
     if (roleStr === "PACKER") return registry.PACKER_ROLE();
     if (roleStr === "CARRIER") return registry.CARRIER_ROLE();
     if (roleStr === "BUYER") return registry.BUYER_ROLE();
@@ -427,7 +421,7 @@ export default function AdminPanel({ account, chainId }) {
                 !showAllHistory ? "action-button primary" : "action-button"
               }
               onClick={() => setShowAllHistory(false)}
-              style={{ fontSize: 13 }}
+              style={{ fontSize: 13}}
             >
               Active Roles Only
             </button>

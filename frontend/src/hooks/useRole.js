@@ -102,7 +102,7 @@ async function detectRoleWithRetry(
     }
 
     const isStaff = await registry.hasRole(
-      await registry.SHIPPER_ROLE(),
+      await registry.STAFF_ROLE(),
       accountAddress
     );
     if (controller.aborted) return;

@@ -1,0 +1,14 @@
+{
+  "origin": "Kho B, Quan 7, TP Ho Chi Minh",
+  "destination": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "destinationAddress": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "description": "Lo hang tong hop shp-012",
+  "weight": "23.0",
+  "items": "110",
+  "coordinates": {
+    "lat": 20.844,
+    "lng": 106.688
+  },
+  "originTier": "TIER_3",
+  "distanceKm": 11
+}

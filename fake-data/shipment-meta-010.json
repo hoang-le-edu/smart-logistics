@@ -1,0 +1,14 @@
+{
+  "origin": "Kho E, Cau Giay, Ha Noi",
+  "destination": "78 Duong Tran Hung Dao, Quan 5, TP Ho Chi Minh",
+  "destinationAddress": "78 Duong Tran Hung Dao, Quan 5, TP Ho Chi Minh",
+  "description": "Lo hang tong hop shp-010",
+  "weight": "20.0",
+  "items": "100",
+  "coordinates": {
+    "lat": 16.067,
+    "lng": 108.22
+  },
+  "originTier": "TIER_1",
+  "distanceKm": 5
+}

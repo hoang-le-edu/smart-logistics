@@ -58,7 +58,7 @@ export default function Dashboard({ account, chainId, role }) {
 
             return {
               id: id.toString(),
-              shipper: shipment.shipper,
+              staff: shipment.staff,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
               warehouse: shipment.warehouse,
@@ -99,8 +99,8 @@ export default function Dashboard({ account, chainId, role }) {
     if (role && role !== "ADMIN") {
       if (
         role === "STAFF" &&
-        (!shipment.shipper ||
-          shipment.shipper.toLowerCase() !== account.toLowerCase())
+        (!shipment.staff ||
+          shipment.staff.toLowerCase() !== account.toLowerCase())
       ) {
         return false;
       }
@@ -118,17 +118,22 @@ export default function Dashboard({ account, chainId, role }) {
       ) {
         return false;
       }
-      if (role === "PACKER" && shipment.status !== 0 && shipment.status !== 1) {
-        return false; // Packer only sees CREATED and PICKED_UP
+      if (role === "PACKER") {
+        // Packer sees shipments assigned to their warehouse in CREATED or PICKED_UP
+        const isMyWarehouse =
+          shipment.warehouse &&
+          shipment.warehouse.toLowerCase() === account.toLowerCase();
+        const isRelevantStatus = shipment.status === 0 || shipment.status === 1;
+        if (!isMyWarehouse || !isRelevantStatus) return false;
       }
     }
 
     // Additional filter
     if (filter === "all") return true;
-    if (filter === "asShipper")
+    if (filter === "asStaff")
       return (
-        shipment.shipper &&
-        shipment.shipper.toLowerCase() === account.toLowerCase()
+        shipment.staff &&
+        shipment.staff.toLowerCase() === account.toLowerCase()
       );
     if (filter === "asCarrier")
       return (
@@ -139,6 +144,11 @@ export default function Dashboard({ account, chainId, role }) {
       return (
         shipment.buyer && shipment.buyer.toLowerCase() === account.toLowerCase()
       );
+    if (filter === "asPacker")
+      return (
+        shipment.warehouse &&
+        shipment.warehouse.toLowerCase() === account.toLowerCase()
+      );
     return true;
   });
 
@@ -146,10 +156,10 @@ export default function Dashboard({ account, chainId, role }) {
     if (!account) return "—";
     const roles = [];
     if (
-      shipment.shipper &&
-      shipment.shipper.toLowerCase() === account.toLowerCase()
+      shipment.staff &&
+      shipment.staff.toLowerCase() === account.toLowerCase()
     )
-      roles.push("Shipper");
+      roles.push("Staff");
     if (
       shipment.carrier &&
       shipment.carrier.toLowerCase() === account.toLowerCase()
@@ -173,10 +183,11 @@ export default function Dashboard({ account, chainId, role }) {
     const s = shipment.status;
     if (s >= 4) return false;
     const next = s + 1;
+    // Next = 1 (PICKED_UP) should be performed by Packer (warehouse), not Staff
     if (next === 1)
       return (
-        shipment.shipper &&
-        shipment.shipper.toLowerCase() === account.toLowerCase()
+        shipment.warehouse &&
+        shipment.warehouse.toLowerCase() === account.toLowerCase()
       );
     if (next === 2 || next === 3)
       return (
@@ -256,13 +267,13 @@ export default function Dashboard({ account, chainId, role }) {
           All ({shipments.length})
         </button>
         <button
-          className={filter === "asShipper" ? "active" : ""}
-          onClick={() => setFilter("asShipper")}
+          className={filter === "asStaff" ? "active" : ""}
+          onClick={() => setFilter("asStaff")}
         >
-          As Shipper (
+          As Staff (
           {
             shipments.filter(
-              (s) => s.shipper.toLowerCase() === account.toLowerCase()
+              (s) => s.staff && s.staff.toLowerCase() === account.toLowerCase()
             ).length
           }
           )
@@ -287,6 +298,20 @@ export default function Dashboard({ account, chainId, role }) {
           {
             shipments.filter(
               (s) => s.buyer.toLowerCase() === account.toLowerCase()
+            ).length
+          }
+          )
+        </button>
+        <button
+          className={filter === "asPacker" ? "active" : ""}
+          onClick={() => setFilter("asPacker")}
+        >
+          As Packer (
+          {
+            shipments.filter(
+              (s) =>
+                s.warehouse &&
+                s.warehouse.toLowerCase() === account.toLowerCase()
             ).length
           }
           )
@@ -337,7 +362,7 @@ export default function Dashboard({ account, chainId, role }) {
                   <strong>Role:</strong> {getMyRole(shipment)}
                 </div>
                 <div className="detail-row">
-                  <strong>Shipper:</strong> {formatAddress(shipment.shipper)}
+                  <strong>Staff:</strong> {formatAddress(shipment.staff)}
                 </div>
                 <div className="detail-row">
                   <strong>Carrier:</strong> {formatAddress(shipment.carrier)}

@@ -21,12 +21,20 @@ export default function CarrierPanel({ account, chainId }) {
   const [selectedMilestone, setSelectedMilestone] = useState(1); // 1 = PICKED_UP
   const [cancelReason, setCancelReason] = useState("");
   const [proofFile, setProofFile] = useState(null);
+  const [uploadingTransitDoc, setUploadingTransitDoc] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
+
+  // Cancel modal state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelModalShipmentId, setCancelModalShipmentId] = useState("");
+  const [cancelModalReason, setCancelModalReason] = useState("");
+  const [cancelModalFile, setCancelModalFile] = useState(null);
+  const [cancelModalLoading, setCancelModalLoading] = useState(false);
 
   // Milestone options for carrier (cannot set to CREATED)
   const milestoneOptions = [
@@ -72,7 +80,7 @@ export default function CarrierPanel({ account, chainId }) {
                 : "";
             return {
               id: id.toString(),
-              shipper: shipment.shipper,
+              staff: shipment.staff,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
               milestoneStatus: Number(shipment.status),
@@ -111,16 +119,20 @@ export default function CarrierPanel({ account, chainId }) {
         try {
           const s = await registry.getShipment(i);
           const isUnassigned = s.carrier === ethers.ZeroAddress;
-          const isCreated = Number(s.status) === 0; // CREATED
-          if (isUnassigned && isCreated) {
+          const statusNum = Number(s.status);
+          const isCreated = statusNum === 0; // CREATED
+          const isPickedUp = statusNum === 1; // PICKED_UP
+          // Available for carrier: either CREATED (to accept) or PICKED_UP (to move IN_TRANSIT)
+          if (isUnassigned && (isCreated || isPickedUp)) {
             const latestCid =
               s.metadataCids.length > 0
                 ? s.metadataCids[s.metadataCids.length - 1]
                 : "";
             list.push({
               id: i.toString(),
-              shipper: s.shipper,
+              staff: s.staff,
               buyer: s.buyer,
+              status: statusNum,
               metadataCid: latestCid,
               timestamp: Number(s.createdAt),
             });
@@ -139,6 +151,46 @@ export default function CarrierPanel({ account, chainId }) {
 
   const handleFileChange = (e) => {
     setProofFile(e.target.files[0]);
+  };
+
+  const uploadTransitDocument = async (shipmentId, file) => {
+    try {
+      setUploadingTransitDoc(shipmentId);
+      if (!file) {
+        setError("Please select a document to upload");
+        setUploadingTransitDoc(null);
+        return;
+      }
+
+      // Upload file to IPFS
+      const result = await uploadToIPFS(file);
+
+      // Attach document to shipment
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      await handleTransaction(
+        () => registry.attachDocument(shipmentId, "Transit Proof", result.cid),
+        async () => {
+          setSuccess("Transit document uploaded successfully!");
+          // Refresh lists to reflect any changes
+          await loadCarrierShipments();
+          await loadAvailableShipments();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Transit document upload error:", err);
+      setError(parseContractError(err));
+    } finally {
+      setUploadingTransitDoc(null);
+    }
   };
 
   const canUpdateMilestone = (currentStatus, targetStatus) => {
@@ -275,6 +327,50 @@ export default function CarrierPanel({ account, chainId }) {
     }
   };
 
+  // Directly mark a shipment as IN_TRANSIT without showing the update form
+  const markInTransitDirect = async (shipmentId, currentStatus) => {
+    if (!account) {
+      setError("Please connect your wallet");
+      return;
+    }
+
+    if (!canUpdateMilestone(currentStatus, 2)) {
+      setError(`Cannot update from ${getMilestoneStatusName(currentStatus)} to In Transit`);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    setTxHash("");
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      await handleTransaction(
+        () => registry.updateMilestone(shipmentId, 2),
+        async (receipt) => {
+          setSuccess("Milestone updated to In Transit!");
+          setTxHash(receipt.hash);
+          await loadCarrierShipments();
+          await loadAvailableShipments();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Direct IN_TRANSIT error:", err);
+      setError(parseContractError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const acceptShipment = async (shipmentId) => {
     setLoading(true);
     setError("");
@@ -328,6 +424,124 @@ export default function CarrierPanel({ account, chainId }) {
       setError(parseContractError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Directly mark a shipment as ARRIVED without showing the update form
+  const markArrivedDirect = async (shipmentId, currentStatus) => {
+    if (!account) {
+      setError("Please connect your wallet");
+      return;
+    }
+
+    if (!canUpdateMilestone(currentStatus, 3)) {
+      setError(`Cannot update from ${getMilestoneStatusName(currentStatus)} to Arrived`);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    setTxHash("");
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      await handleTransaction(
+        () => registry.updateMilestone(shipmentId, 3),
+        async (receipt) => {
+          setSuccess("Milestone updated to Arrived!");
+          setTxHash(receipt.hash);
+          await loadCarrierShipments();
+          await loadAvailableShipments();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Direct ARRIVED error:", err);
+      setError(parseContractError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCancelModal = (shipmentId) => {
+    setCancelModalOpen(true);
+    setCancelModalShipmentId(shipmentId);
+    setCancelModalReason("");
+    setCancelModalFile(null);
+    setError("");
+    setSuccess("");
+  };
+
+  const closeCancelModal = () => {
+    setCancelModalOpen(false);
+  };
+
+  const confirmCancelShipment = async () => {
+    if (!account) {
+      setError("Please connect your wallet");
+      return;
+    }
+    if (!cancelModalReason.trim()) {
+      setError("Cancel reason is required");
+      return;
+    }
+    setCancelModalLoading(true);
+    setError("");
+    setSuccess("");
+    setTxHash("");
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const registry = getContract(
+        "ShipmentRegistry",
+        ShipmentRegistryABI.abi,
+        signer,
+        chainId
+      );
+
+      await handleTransaction(
+        () => registry.markShipmentFailed(cancelModalShipmentId, cancelModalReason.trim()),
+        async (receipt) => {
+          setSuccess("Shipment canceled and marked as failed. Buyer will be refunded.");
+          setTxHash(receipt.hash);
+
+          // upload cancel proof if provided
+          if (cancelModalFile) {
+            try {
+              if (isPinataConfigured()) {
+                const result = await uploadToIPFS(cancelModalFile);
+                await handleTransaction(
+                  () => registry.attachDocument(cancelModalShipmentId, "Cancel Proof", result.cid),
+                  () => {},
+                  () => {}
+                );
+              } else {
+                console.warn("Pinata not configured, skipping cancel proof upload");
+              }
+            } catch (attachErr) {
+              console.warn("Cancel proof upload failed:", attachErr);
+            }
+          }
+
+          await loadCarrierShipments();
+          await loadAvailableShipments();
+          closeCancelModal();
+        },
+        (errorMsg) => setError(parseContractError({ message: errorMsg }))
+      );
+    } catch (err) {
+      console.error("Confirm cancel error:", err);
+      setError(parseContractError(err));
+    } finally {
+      setCancelModalLoading(false);
     }
   };
 
@@ -411,11 +625,13 @@ export default function CarrierPanel({ account, chainId }) {
                 <div key={s.id} className="shipment-card">
                   <div className="card-header">
                     <h4>Shipment #{s.id}</h4>
-                    <span className={`status-badge status-0`}>CREATED</span>
+                    <span className={`status-badge status-${s.status}`}>
+                      {getMilestoneStatusName(s.status)}
+                    </span>
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Shipper:</strong> {s.shipper.slice(0, 10)}...
+                      <strong>Staff:</strong> {s.staff.slice(0, 10)}...
                     </p>
                     <p>
                       <strong>Buyer:</strong> {s.buyer.slice(0, 10)}...
@@ -439,13 +655,40 @@ export default function CarrierPanel({ account, chainId }) {
                     className="card-actions"
                     style={{ padding: "8px 16px 16px" }}
                   >
-                    <button
-                      className="action-button"
-                      disabled={loading}
-                      onClick={() => acceptShipment(s.id)}
-                    >
-                      Accept & Pick Up
-                    </button>
+                    {s.status === 0 ? (
+                      <button
+                        className="action-button"
+                        style={{ backgroundColor: "#000", color: "#fff" }}
+                        disabled={loading}
+                        onClick={() => acceptShipment(s.id)}
+                      >
+                        Accept
+                      </button>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="action-button"
+                          style={{ backgroundColor: "#000", color: "#fff" }}
+                          disabled={loading}
+                          onClick={() => markInTransitDirect(s.id, s.status)}
+                        >
+                          Mark In Transit
+                        </button>
+                        <label className="action-button" style={{ backgroundColor: "#000", color: "#fff" }}>
+                          {uploadingTransitDoc === s.id ? "Uploading..." : "Upload Transit Proof"}
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.json"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) uploadTransitDocument(s.id, f);
+                            }}
+                            disabled={uploadingTransitDoc === s.id}
+                            style={{ display: "none" }}
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -481,7 +724,7 @@ export default function CarrierPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Shipper:</strong> {shipment.shipper.slice(0, 10)}
+                      <strong>Staff:</strong> {shipment.staff.slice(0, 10)}
                       ...
                     </p>
                     <p>
@@ -503,11 +746,121 @@ export default function CarrierPanel({ account, chainId }) {
                       </a>
                     )}
                   </div>
+                  {shipment.milestoneStatus === 2 && (
+                    <div className="card-actions" style={{ padding: "8px 16px 16px" }}>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="action-button"
+                          style={{ backgroundColor: "#000", color: "#fff" }}
+                          disabled={loading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markArrivedDirect(shipment.id, shipment.milestoneStatus);
+                          }}
+                        >
+                          Mark Arrived
+                        </button>
+                        <label
+                          className="action-button"
+                          style={{ backgroundColor: "#000", color: "#fff" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {uploadingTransitDoc === shipment.id ? "Uploading..." : "Upload Document"}
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.json"
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const f = e.target.files?.[0];
+                              if (f) uploadTransitDocument(shipment.id, f);
+                            }}
+                            disabled={uploadingTransitDoc === shipment.id}
+                            style={{ display: "none" }}
+                          />
+                        </label>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          className="action-button"
+                          style={{ backgroundColor: "#000", color: "#fff" }}
+                          disabled={loading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCancelModal(shipment.id);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {cancelModalOpen && (
+          <div
+            className="modal-overlay"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+            onClick={closeCancelModal}
+          >
+            <div
+              className="modal"
+              style={{ background: "#fff", padding: 20, borderRadius: 8, width: 520, maxWidth: "90%" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ marginTop: 0 }}>Cancel Shipment</h3>
+              <div className="form-group">
+                <label htmlFor="cancelReasonModal">Reason <span className="required">*</span></label>
+                <textarea
+                  id="cancelReasonModal"
+                  value={cancelModalReason}
+                  onChange={(e) => setCancelModalReason(e.target.value)}
+                  placeholder="Provide a clear reason for cancellation"
+                  rows={3}
+                  className="form-textarea"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="cancelProof">Attach Cancel Proof (optional)</label>
+                <input
+                  type="file"
+                  id="cancelProof"
+                  onChange={(e) => setCancelModalFile(e.target.files?.[0] || null)}
+                  accept=".pdf,.jpg,.jpeg,.png,.json"
+                  className="form-file"
+                  style={{ color: "#000", backgroundColor: "#fff" }}
+                />
+                <div style={{ marginTop: 6, color: "#000" }}>
+                  {cancelModalFile ? `Selected: ${cancelModalFile.name}` : "No file selected"}
+                </div>
+                {!isPinataConfigured() && (
+                  <p className="hint warning">⚠️ IPFS not configured. Files won't be uploaded.</p>
+                )}
+              </div>
+              <div className="form-actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button className="cancel-button" onClick={closeCancelModal} disabled={cancelModalLoading}>Close</button>
+                <button
+                  className="submit-button"
+                  onClick={confirmCancelShipment}
+                  disabled={cancelModalLoading}
+                >
+                  {cancelModalLoading ? "Processing..." : "Confirm Cancel"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {selectedShipment && (
           <div className="update-form">

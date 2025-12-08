@@ -21,15 +21,18 @@ export default function PackerPanel({ account, chainId }) {
       // Get all shipments with status CREATED (0)
       const totalShipments = await registry.getTotalShipments();
       const pending = [];
+      const ZERO = "0x0000000000000000000000000000000000000000";
 
       for (let i = 0; i < totalShipments; i++) {
         const shipment = await registry.getShipment(i);
+        // After contract update, allow Packer to see all CREATED shipments
         if (Number(shipment.status) === 0) {
           pending.push({
             id: Number(shipment.id),
-            shipper: shipment.shipper,
+            staff: shipment.staff,
             carrier: shipment.carrier,
             buyer: shipment.buyer,
+            warehouse: shipment.warehouse,
             status: Number(shipment.status),
             createdAt: new Date(
               Number(shipment.createdAt) * 1000
@@ -50,6 +53,7 @@ export default function PackerPanel({ account, chainId }) {
   async function markPickedUp(shipmentId) {
     try {
       const registry = await getShipmentRegistry();
+      // Contract now allows PICKED_UP without an assigned carrier; carrier will self-assign at IN_TRANSIT
       const tx = await registry.updateMilestone(shipmentId, 1); // PICKED_UP
       await tx.wait();
       alert("Shipment marked as picked up!");
@@ -119,9 +123,9 @@ export default function PackerPanel({ account, chainId }) {
 
               <div className="card-body">
                 <div className="info-row">
-                  <span className="label">Shipper:</span>
+                  <span className="label">Staff:</span>
                   <span className="value address">
-                    {shipment.shipper.slice(0, 10)}...
+                    {shipment.staff.slice(0, 10)}...
                   </span>
                 </div>
                 <div className="info-row">

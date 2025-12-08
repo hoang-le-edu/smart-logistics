@@ -1,0 +1,14 @@
+{
+  "origin": "Kho C, Thu Duc, TP Ho Chi Minh",
+  "destination": "123 Duong Mau, Quan 3, TP Ho Chi Minh",
+  "destinationAddress": "123 Duong Mau, Quan 3, TP Ho Chi Minh",
+  "description": "Lo hang tong hop shp-008",
+  "weight": "17.0",
+  "items": "90",
+  "coordinates": {
+    "lat": 10.737,
+    "lng": 106.721
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 29
+}

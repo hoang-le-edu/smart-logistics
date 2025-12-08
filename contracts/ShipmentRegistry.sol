@@ -16,6 +16,7 @@ interface IEscrowMilestone {
     }
     function getEscrowDetails(uint256 shipmentId) external view returns (Escrow memory);
     function openEscrowByRegistry(uint256 shipmentId, address buyer, uint256 amount, uint256 deadline) external;
+    function releaseToAdmin(uint256 shipmentId, uint256 amount, uint256 milestone) external;
 }
 
 interface ILogiToken {
@@ -28,7 +29,7 @@ interface ILogiToken {
  * Roles: SHIPPER_ROLE, CARRIER_ROLE, BUYER_ROLE
  */
 contract ShipmentRegistry is AccessControl, ReentrancyGuard {
-    bytes32 public constant SHIPPER_ROLE = keccak256("SHIPPER_ROLE");
+    bytes32 public constant STAFF_ROLE = keccak256("STAFF_ROLE");
     bytes32 public constant CARRIER_ROLE = keccak256("CARRIER_ROLE");
     bytes32 public constant BUYER_ROLE = keccak256("BUYER_ROLE");
     bytes32 public constant PACKER_ROLE = keccak256("PACKER_ROLE");
@@ -45,7 +46,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
 
     struct Shipment {
         uint256 id;
-        address shipper;
+        address staff;
         address carrier;
         address buyer;
         MilestoneStatus status;
@@ -65,7 +66,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     mapping(uint256 => Shipment) private _shipments;
     mapping(uint256 => Document[]) private _documents; // Documents attached to shipments
     
-    // Track shipments by address (shipper, carrier, buyer)
+    // Track shipments by address (staff, carrier, buyer)
     mapping(address => uint256[]) private _shipmentsByAddress;
 
     // Orders created by buyers (lightweight via events)
@@ -80,7 +81,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
 
     event ShipmentCreated(
         uint256 indexed shipmentId,
-        address indexed shipper,
+        address indexed staff,
         address indexed carrier,
         address buyer,
         string metadataCid,
@@ -315,7 +316,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         string[] calldata documentCids,
         string[] calldata documentTypes,
         uint256 shippingFee
-    ) external onlyRole(SHIPPER_ROLE) nonReentrant returns (uint256) {
+    ) external onlyRole(STAFF_ROLE) nonReentrant returns (uint256) {
         require(buyer != address(0), "Invalid buyer address");
         require(bytes(metadataCid).length > 0, "Metadata CID required");
 
@@ -323,7 +324,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
 
         _shipments[shipmentId] = Shipment({
             id: shipmentId,
-            shipper: msg.sender,
+            staff: msg.sender,
             carrier: address(0),
             buyer: buyer,
             status: MilestoneStatus.CREATED,
@@ -333,7 +334,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         });
         _shipments[shipmentId].metadataCids.push(metadataCid);
 
-        // Track shipment for shipper and buyer only at creation
+        // Track shipment for staff and buyer only at creation
         _shipmentsByAddress[msg.sender].push(shipmentId);
         _shipmentsByAddress[buyer].push(shipmentId);
 
@@ -390,8 +391,20 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         require(target <= uint256(MilestoneStatus.DELIVERED), "Invalid status");
 
         if (newStatus == MilestoneStatus.PICKED_UP) {
+            // Flow: Staff creates -> Buyer escrow -> Packer marks PICKED_UP
+            // Carrier may still be unset at this stage; allow PICKED_UP without assigned carrier
             require(hasRole(PACKER_ROLE, msg.sender), "Packer only");
-        } else if (newStatus == MilestoneStatus.IN_TRANSIT || newStatus == MilestoneStatus.ARRIVED) {
+        } else if (newStatus == MilestoneStatus.IN_TRANSIT) {
+            // Any carrier can move to IN_TRANSIT and self-assign if none
+            require(hasRole(CARRIER_ROLE, msg.sender), "Carrier only");
+            if (shipment.carrier == address(0)) {
+                shipment.carrier = msg.sender;
+                _shipmentsByAddress[msg.sender].push(shipmentId);
+                emit CarrierAssigned(shipmentId, msg.sender);
+            } else {
+                require(msg.sender == shipment.carrier, "Only assigned carrier");
+            }
+        } else if (newStatus == MilestoneStatus.ARRIVED) {
             require(hasRole(CARRIER_ROLE, msg.sender) && msg.sender == shipment.carrier, "Carrier only");
         } else if (newStatus == MilestoneStatus.DELIVERED) {
             require(hasRole(BUYER_ROLE, msg.sender) && msg.sender == shipment.buyer, "Buyer only");
@@ -400,6 +413,35 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         shipment.status = newStatus;
         shipment.updatedAt = block.timestamp;
         emit MilestoneUpdated(shipmentId, newStatus, block.timestamp);
+
+        // Handle escrow milestone payouts to admin: 30/30/20/20
+        if (escrowContract != address(0)) {
+            IEscrowMilestone.Escrow memory esc = IEscrowMilestone(escrowContract).getEscrowDetails(shipmentId);
+            if (esc.isActive && esc.totalAmount > 0) {
+                uint256 bp;
+                uint256 milestoneNum;
+                if (newStatus == MilestoneStatus.PICKED_UP) {
+                    bp = 3000; milestoneNum = 1;
+                } else if (newStatus == MilestoneStatus.IN_TRANSIT) {
+                    bp = 3000; milestoneNum = 2;
+                } else if (newStatus == MilestoneStatus.ARRIVED) {
+                    bp = 2000; milestoneNum = 3;
+                } else if (newStatus == MilestoneStatus.DELIVERED) {
+                    bp = 2000; milestoneNum = 4;
+                }
+                if (bp > 0) {
+                    uint256 amount = (esc.totalAmount * bp) / 10000;
+                    // Safe guard: do not exceed remaining
+                    uint256 remaining = esc.totalAmount - esc.releasedAmount;
+                    if (amount > remaining) {
+                        amount = remaining;
+                    }
+                    if (amount > 0) {
+                        IEscrowMilestone(escrowContract).releaseToAdmin(shipmentId, amount, milestoneNum);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -440,7 +482,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         Shipment storage shipment = _shipments[shipmentId];
         require(shipment.id == shipmentId, "Shipment does not exist");
         require(
-            hasRole(SHIPPER_ROLE, msg.sender) ||
+            hasRole(STAFF_ROLE, msg.sender) ||
             hasRole(CARRIER_ROLE, msg.sender) ||
             hasRole(BUYER_ROLE, msg.sender),
             "Unauthorized"
@@ -518,7 +560,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         Shipment storage shipment = _shipments[shipmentId];
         require(shipment.id == shipmentId, "Shipment does not exist");
         require(
-            msg.sender == shipment.shipper ||
+            msg.sender == shipment.staff ||
             msg.sender == shipment.carrier ||
             msg.sender == shipment.buyer ||
             hasRole(PACKER_ROLE, msg.sender),
@@ -576,7 +618,7 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
         Shipment storage shipment = _shipments[shipmentId];
         require(shipment.id == shipmentId, "Shipment does not exist");
         require(
-            msg.sender == shipment.shipper ||
+            msg.sender == shipment.staff ||
             msg.sender == shipment.carrier ||
             msg.sender == shipment.buyer,
             "Not authorized"
@@ -618,8 +660,8 @@ contract ShipmentRegistry is AccessControl, ReentrancyGuard {
     /**
      * @dev Grant SHIPPER_ROLE
      */
-    function grantShipperRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        grantRole(SHIPPER_ROLE, account);
+    function grantStaffRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(STAFF_ROLE, account);
     }
 
     /**

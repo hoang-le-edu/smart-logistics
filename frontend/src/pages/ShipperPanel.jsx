@@ -196,6 +196,38 @@ export default function ShipperPanel({ account, chainId }) {
   const prefillFromOrder = async (order) => {
     try {
       const data = await retrieveFromIPFS(order.cid);
+      // Normalize shipping fee from order metadata: it may be stored in wei
+      const normalizeFee = (fee) => {
+        try {
+          if (fee === null || typeof fee === "undefined") return "";
+          // Support number, string, or bigint inputs
+          if (typeof fee === "bigint") {
+            return ethers.formatEther(fee);
+          }
+          if (typeof fee === "number") {
+            // If it's a small number, assume it's already human-readable
+            // If it's extremely large, it might be wei; convert via BigInt
+            if (fee > 1e12) {
+              return ethers.formatEther(BigInt(Math.trunc(fee)));
+            }
+            return String(fee);
+          }
+          if (typeof fee === "string") {
+            // Detect probable wei by length or all digits and large value
+            const onlyDigits = /^[0-9]+$/.test(fee);
+            if (onlyDigits && fee.length > 12) {
+              return ethers.formatEther(BigInt(fee));
+            }
+            return fee;
+          }
+          return String(fee);
+        } catch (_) {
+          // Fallback to string if formatting fails
+          return String(fee ?? "");
+        }
+      };
+
+      const prefilledFee = normalizeFee(data.shippingFee);
       setFormData((prev) => ({
         ...prev,
         description: data.productName || data.description || prev.description,
@@ -203,6 +235,11 @@ export default function ShipperPanel({ account, chainId }) {
         destination: data.destination || prev.destination,
         weight: prev.weight, // Buyer does not provide weight; shipper will input
         items: (data.quantity ?? data.items) || prev.items,
+        // Prefill shipping fee if present in order metadata
+        shippingFee:
+          typeof data.shippingFee !== "undefined" && data.shippingFee !== null
+            ? prefilledFee
+            : prev.shippingFee,
       }));
       setSelectedOrder(order);
     } catch (e) {
@@ -297,10 +334,15 @@ export default function ShipperPanel({ account, chainId }) {
       }
 
       // Determine escrow amount based on toggle
-      const shippingFeeParam =
-        useAutoEscrow && formData.shippingFee
-          ? ethers.parseEther(String(formData.shippingFee))
-          : 0n;
+      // Ensure non-zero shipping fee for auto-escrow
+      const shippingFeeParam = (() => {
+        if (!useAutoEscrow) return 0n;
+        const feeNum = Number(formData.shippingFee);
+        if (!isNaN(feeNum) && feeNum > 0) {
+          return ethers.parseEther(String(feeNum));
+        }
+        return 0n;
+      })();
 
       const receipt = await handleTransaction(
         () =>
@@ -322,6 +364,8 @@ export default function ShipperPanel({ account, chainId }) {
             destination: "",
             weight: "",
             items: "",
+            shippingFee: "",
+            manualBuyerAddress: "",
           });
           setFile(null);
           setSelectedOrder(null);
@@ -416,7 +460,7 @@ export default function ShipperPanel({ account, chainId }) {
       <div className="panel-header">
         <h2>Create New Shipment</h2>
         <p className="subtitle">
-          As Shipper, you can create new logistics shipments
+          As Staff, you can create new logistics shipments
         </p>
       </div>
 
@@ -484,9 +528,9 @@ export default function ShipperPanel({ account, chainId }) {
                 name="manualBuyerAddress"
                 value={formData.manualBuyerAddress}
                 onChange={handleInputChange}
-                placeholder="0x..."
                 required={createWithoutOrder}
                 className="form-input"
+                placeholder="0x..."
               />
               <p className="hint">Enter the buyer's wallet address</p>
             </div>
@@ -509,6 +553,7 @@ export default function ShipperPanel({ account, chainId }) {
               required
               rows="3"
               className="form-textarea"
+              disabled={!!selectedOrder}
             />
           </div>
 
@@ -526,6 +571,7 @@ export default function ShipperPanel({ account, chainId }) {
                 placeholder="City, Country"
                 required
                 className="form-input"
+                disabled={!!selectedOrder}
               />
             </div>
 
@@ -542,6 +588,7 @@ export default function ShipperPanel({ account, chainId }) {
                 placeholder="City, Country"
                 required
                 className="form-input"
+                disabled={!!selectedOrder}
               />
             </div>
           </div>
@@ -571,6 +618,7 @@ export default function ShipperPanel({ account, chainId }) {
                 onChange={handleInputChange}
                 placeholder="10"
                 className="form-input"
+                disabled={!!selectedOrder}
               />
             </div>
           </div>
@@ -587,6 +635,7 @@ export default function ShipperPanel({ account, chainId }) {
                 placeholder="1000"
                 step="0.01"
                 className="form-input"
+                disabled={!!selectedOrder}
               />
               <div className="form-group" style={{ marginTop: 12 }}>
                 <label className="checkbox-label">

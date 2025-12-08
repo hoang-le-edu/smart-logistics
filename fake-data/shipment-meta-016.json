@@ -1,0 +1,14 @@
+{
+  "origin": "Kho A, Quan 1, TP Ho Chi Minh",
+  "destination": "45 Duong Le Loi, Quan 1, TP Ho Chi Minh",
+  "destinationAddress": "45 Duong Le Loi, Quan 1, TP Ho Chi Minh",
+  "description": "Lo hang tong hop shp-016",
+  "weight": "29.0",
+  "items": "130",
+  "coordinates": {
+    "lat": 16.067,
+    "lng": 108.22
+  },
+  "originTier": "TIER_1",
+  "distanceKm": 23
+}

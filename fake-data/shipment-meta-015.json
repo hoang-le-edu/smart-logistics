@@ -1,0 +1,14 @@
+{
+  "origin": "Kho E, Cau Giay, Ha Noi",
+  "destination": "123 Duong Mau, Quan 3, TP Ho Chi Minh",
+  "destinationAddress": "123 Duong Mau, Quan 3, TP Ho Chi Minh",
+  "description": "Lo hang tong hop shp-015",
+  "weight": "27.5",
+  "items": "125",
+  "coordinates": {
+    "lat": 21.028,
+    "lng": 105.854
+  },
+  "originTier": "TIER_3",
+  "distanceKm": 20
+}

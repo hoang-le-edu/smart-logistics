@@ -1,0 +1,14 @@
+{
+  "origin": "Kho C, Thu Duc, TP Ho Chi Minh",
+  "destination": "56 Duong 30 Thang 4, Ninh Kieu, Can Tho",
+  "destinationAddress": "56 Duong 30 Thang 4, Ninh Kieu, Can Tho",
+  "description": "Lo hang tong hop shp-013",
+  "weight": "24.5",
+  "items": "115",
+  "coordinates": {
+    "lat": 10.776,
+    "lng": 106.7
+  },
+  "originTier": "TIER_1",
+  "distanceKm": 14
+}

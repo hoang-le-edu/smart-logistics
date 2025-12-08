@@ -10,6 +10,7 @@
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "setup:local": "hardhat run scripts/setup.js --network localhost",
     "setup:sepolia": "hardhat run scripts/setup.js --network sepolia",
+    "seed:sepolia": "hardhat run scripts/seed-sepolia.js --network sepolia",
     "node": "hardhat node",
     "clean": "hardhat clean"
   },

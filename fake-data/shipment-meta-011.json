@@ -1,0 +1,14 @@
+{
+  "origin": "Kho A, Quan 1, TP Ho Chi Minh",
+  "destination": "12 Duong Phan Chu Trinh, Hoan Kiem, Ha Noi",
+  "destinationAddress": "12 Duong Phan Chu Trinh, Hoan Kiem, Ha Noi",
+  "description": "Lo hang tong hop shp-011",
+  "weight": "21.5",
+  "items": "105",
+  "coordinates": {
+    "lat": 10.045,
+    "lng": 105.746
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 8
+}

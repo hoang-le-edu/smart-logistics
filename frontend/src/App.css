@@ -120,6 +120,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background: #fff;
 }
 
 /* HEADER */
@@ -198,6 +199,7 @@ body {
 
 /* MAIN CONTENT */
 .app-main {
+  
   flex: 1;
   padding: var(--space-8);
   max-width: 1400px;

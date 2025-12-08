@@ -1,0 +1,14 @@
+{
+  "origin": "Kho E, Cau Giay, Ha Noi",
+  "destination": "56 Duong 30 Thang 4, Ninh Kieu, Can Tho",
+  "destinationAddress": "56 Duong 30 Thang 4, Ninh Kieu, Can Tho",
+  "description": "Lo hang tong hop shp-020",
+  "weight": "35.0",
+  "items": "150",
+  "coordinates": {
+    "lat": 10.737,
+    "lng": 106.721
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 5
+}

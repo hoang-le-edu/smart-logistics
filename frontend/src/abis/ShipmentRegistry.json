@@ -1,5 +1,5 @@
 {
-  "address": "0x8a132ee1bfE65a2378b99918EFb50C0B5470A627",
+  "address": "0xCA00406752C652f2bba814041e9e7eC200B934a4",
   "abi": [
     {
       "inputs": [],
@@ -269,7 +269,7 @@
         {
           "indexed": true,
           "internalType": "address",
-          "name": "shipper",
+          "name": "staff",
           "type": "address"
         },
         {
@@ -410,7 +410,7 @@
     },
     {
       "inputs": [],
-      "name": "SHIPPER_ROLE",
+      "name": "STAFF_ROLE",
       "outputs": [
         {
           "internalType": "bytes32",
@@ -691,7 +691,7 @@
             },
             {
               "internalType": "address",
-              "name": "shipper",
+              "name": "staff",
               "type": "address"
             },
             {
@@ -925,7 +925,7 @@
           "type": "address"
         }
       ],
-      "name": "grantShipperRole",
+      "name": "grantStaffRole",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

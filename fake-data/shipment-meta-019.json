@@ -1,0 +1,14 @@
+{
+  "origin": "Kho D, Ha Dong, Ha Noi",
+  "destination": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "destinationAddress": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "description": "Lo hang tong hop shp-019",
+  "weight": "33.5",
+  "items": "145",
+  "coordinates": {
+    "lat": 10.776,
+    "lng": 106.7
+  },
+  "originTier": "TIER_1",
+  "distanceKm": 32
+}

@@ -1,5 +1,5 @@
 {
-  "address": "0xa452f3B9a12223e4e96571f6eB3b135eA2bdd030",
+  "address": "0x78aEb19FCF997307EAb3DD05b912cC3F15eA32a7",
   "abi": [
     {
       "inputs": [
@@ -83,6 +83,37 @@
         }
       ],
       "name": "AdminAutoMintEscrowOpened",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "shipmentId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "milestone",
+          "type": "uint256"
+        }
+      ],
+      "name": "AdminPaymentReleased",
       "type": "event"
     },
     {
@@ -662,6 +693,29 @@
         }
       ],
       "name": "release",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "shipmentId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "milestone",
+          "type": "uint256"
+        }
+      ],
+      "name": "releaseToAdmin",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

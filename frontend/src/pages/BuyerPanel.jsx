@@ -94,7 +94,7 @@ export default function BuyerPanel({ account, chainId }) {
                 : "";
             return {
               id: id.toString(),
-              shipper: shipment.shipper,
+              staff: shipment.staff,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
               milestoneStatus: Number(shipment.status),
@@ -162,6 +162,10 @@ export default function BuyerPanel({ account, chainId }) {
         isActive: details.isActive,
         isCompleted: details.isCompleted,
       });
+      // Show an info hint when escrow was auto-opened by registry on creation
+      if (details.isActive && Number(details.totalAmount) > 0) {
+        setSuccess("Escrow is active and funded automatically at shipment creation.");
+      }
     } catch (err) {
       console.log("No escrow found for this shipment");
       setEscrowDetails(null);
@@ -602,12 +606,6 @@ export default function BuyerPanel({ account, chainId }) {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const escrow = getContract(
-        "EscrowMilestone",
-        EscrowMilestoneABI.abi,
-        signer,
-        chainId
-      );
       const registry = getContract(
         "ShipmentRegistry",
         ShipmentRegistryABI.abi,
@@ -615,25 +613,18 @@ export default function BuyerPanel({ account, chainId }) {
         chainId
       );
 
-      // Step 1: update shipment to DELIVERED (Buyer-only)
+      // Buyer moves shipment to DELIVERED; registry handles escrow release internally
       await handleTransaction(
         () => registry.updateMilestone(selectedShipment.id, 4),
         async (receipt) => {
-          console.log("Shipment moved to DELIVERED", receipt.hash);
-          // Refresh local shipment state after milestone change
-          await loadBuyerData();
-        },
-        (errorMsg) => {
-          setError(parseContractError({ message: errorMsg }));
-        }
-      );
-
-      // Step 2: release escrow for milestone 4
-      const receipt2 = await handleTransaction(
-        () => escrow.release(selectedShipment.id, 4),
-        async (receipt) => {
-          setSuccess("Delivery confirmed! Payment released to carrier.");
+          setSuccess("Delivery confirmed! Final payment released.");
           setTxHash(receipt.hash);
+          // Update local state to reflect DELIVERED and refresh escrow
+          setSelectedShipment((prev) =>
+            prev && prev.id === selectedShipment.id
+              ? { ...prev, milestoneStatus: 4 }
+              : prev
+          );
           await loadBuyerData();
           await loadEscrowDetails(selectedShipment.id);
         },
@@ -641,7 +632,6 @@ export default function BuyerPanel({ account, chainId }) {
           setError(parseContractError({ message: errorMsg }));
         }
       );
-      console.log("Release receipt:", receipt2);
     } catch (err) {
       console.error("Error confirming delivery:", err);
       setError(parseContractError(err));
@@ -897,7 +887,7 @@ export default function BuyerPanel({ account, chainId }) {
                   </div>
                   <div className="card-body">
                     <p>
-                      <strong>Shipper:</strong> {shipment.shipper.slice(0, 10)}
+                      <strong>Staff:</strong> {shipment.staff.slice(0, 10)}
                       ...
                     </p>
                     <p>
@@ -998,8 +988,9 @@ export default function BuyerPanel({ account, chainId }) {
                           className="hint warning"
                           style={{ marginBottom: 12 }}
                         >
-                          ⚠️ Escrow is not active. Deposit tokens to activate
-                          escrow payments.
+                          ⚠️ Escrow is not active. If the shipment was created
+                          with a shipping fee of 0, auto-escrow will not open.
+                          Deposit tokens to activate escrow payments.
                         </p>
                         <form
                           onSubmit={depositToEscrow}

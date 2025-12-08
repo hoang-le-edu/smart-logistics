@@ -1,0 +1,14 @@
+{
+  "origin": "Kho E, Cau Giay, Ha Noi",
+  "destination": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "destinationAddress": "90 Duong Vo Nguyen Giap, Son Tra, Da Nang",
+  "description": "Lo hang tong hop shp-005",
+  "weight": "12.5",
+  "items": "75",
+  "coordinates": {
+    "lat": 10.045,
+    "lng": 105.746
+  },
+  "originTier": "TIER_2",
+  "distanceKm": 20
+}
