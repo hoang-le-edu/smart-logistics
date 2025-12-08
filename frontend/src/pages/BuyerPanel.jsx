@@ -52,6 +52,9 @@ export default function BuyerPanel({ account, chainId }) {
 
   useEffect(() => {
     if (account) {
+      // Auto-fill origin from predefined shipping config and lock it
+      const defaultOrigin = (import.meta && import.meta.env && import.meta.env.VITE_DEFAULT_ORIGIN) || "UIT HCMC";
+      setOrderForm((prev) => ({ ...prev, origin: defaultOrigin }));
       loadBuyerData();
     }
   }, [account, chainId]);
@@ -174,6 +177,8 @@ export default function BuyerPanel({ account, chainId }) {
 
   const handleOrderInput = (e) => {
     const { name, value } = e.target;
+    // Prevent editing origin; it's auto-filled from config
+    if (name === "origin") return;
     setOrderForm((prev) => ({ ...prev, [name]: value }));
 
     // Auto-calculate shipping fee when destination changes
@@ -685,7 +690,8 @@ export default function BuyerPanel({ account, chainId }) {
               name="origin"
               className="form-input"
               value={orderForm.origin}
-              onChange={handleOrderInput}
+              readOnly
+              disabled
               placeholder="TP.HCM, VN"
             />
           </div>
