@@ -32,6 +32,9 @@ export default function BuyerPanel({ account, chainId }) {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [txHash, setTxHash] = useState("");
+  // Display name cache to replace wallet addresses with names
+  const [nameCache, setNameCache] = useState({});
+  const [namesReady, setNamesReady] = useState(false);
 
   // Pagination state
   const [displayedShipmentsCount, setDisplayedShipmentsCount] = useState(5);
@@ -124,7 +127,10 @@ export default function BuyerPanel({ account, chainId }) {
         })
       );
 
-      setShipments(shipmentsData.filter((s) => s !== null));
+      // Initialize shipments and pagination lists
+      const filtered = shipmentsData.filter((s) => s !== null);
+      setAllShipments(filtered);
+      setShipments(filtered.slice(0, displayedShipmentsCount));
       // Prefetch display names for involved addresses to avoid UI flicker
       const addrs = new Set();
       for (const s of shipmentsData) {
