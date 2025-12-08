@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
-import { ShipmentRegistryABI, EscrowMilestoneABI, LogiTokenABI } from '../abis';
+import { useState, useEffect } from "react";
+import { ethers } from "ethers";
+import { ShipmentRegistryABI, EscrowMilestoneABI, LogiTokenABI } from "../abis";
 import {
   getContract,
   handleTransaction,
   parseContractError,
   getMilestoneStatusName,
   formatTokenAmount,
-} from '../utils/contracts';
-import { uploadJSONToIPFS, isPinataConfigured } from '../utils/ipfs';
+} from "../utils/contracts";
+import { uploadJSONToIPFS, isPinataConfigured } from "../utils/ipfs";
 import {
   calculateShippingFeeFromAddress,
   getShippingTierDescription,
-} from '../utils/shippingFee';
-import ShipmentDetailModal from '../components/ShipmentDetailModal';
+} from "../utils/shippingFee";
+import ShipmentDetailModal from "../components/ShipmentDetailModal";
 
 export default function BuyerPanel({ account, chainId }) {
   const [shipments, setShipments] = useState([]);
@@ -22,31 +22,38 @@ export default function BuyerPanel({ account, chainId }) {
   const [escrowDetails, setEscrowDetails] = useState(null);
   const [viewingShipment, setViewingShipment] = useState(null);
   const [viewingOrder, setViewingOrder] = useState(null);
-  const [depositAmount, setDepositAmount] = useState('');
-  const [manualEscrowAmount, setManualEscrowAmount] = useState('');
-  const [manualEscrowDeadline, setManualEscrowDeadline] = useState('30');
-  const [tokenBalance, setTokenBalance] = useState('0');
+  const [depositAmount, setDepositAmount] = useState("");
+  const [manualEscrowAmount, setManualEscrowAmount] = useState("");
+  const [manualEscrowDeadline, setManualEscrowDeadline] = useState("30");
+  const [tokenBalance, setTokenBalance] = useState("0");
   const [loading, setLoading] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-  const [txHash, setTxHash] = useState('');
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+  const [txHash, setTxHash] = useState("");
+
+  // Pagination state
+  const [displayedShipmentsCount, setDisplayedShipmentsCount] = useState(5);
+  const [displayedOrdersCount, setDisplayedOrdersCount] = useState(5);
+  const [allShipments, setAllShipments] = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
+  const RECORDS_PER_PAGE = 5;
 
   // Order form state
   const [orderForm, setOrderForm] = useState({
-    productName: '',
-    origin: '',
-    destination: '',
-    quantity: '',
-    notes: '',
+    productName: "",
+    origin: "",
+    destination: "",
+    quantity: "",
+    notes: "",
   });
 
   // Shipping fee calculation state
   const [shippingFee, setShippingFee] = useState(null);
   const [shippingDistance, setShippingDistance] = useState(null);
   const [calculatingFee, setCalculatingFee] = useState(false);
-  const [feeError, setFeeError] = useState('');
+  const [feeError, setFeeError] = useState("");
   const [deliveryCoordinates, setDeliveryCoordinates] = useState(null);
 
   useEffect(() => {
@@ -54,6 +61,15 @@ export default function BuyerPanel({ account, chainId }) {
       loadBuyerData();
     }
   }, [account, chainId]);
+
+  // Update displayed items when count changes
+  useEffect(() => {
+    setShipments(allShipments.slice(0, displayedShipmentsCount));
+  }, [displayedShipmentsCount, allShipments]);
+
+  useEffect(() => {
+    setOrders(allOrders.slice(0, displayedOrdersCount));
+  }, [displayedOrdersCount, allOrders]);
 
   const loadBuyerData = async () => {
     if (!account) return;
@@ -63,13 +79,13 @@ export default function BuyerPanel({ account, chainId }) {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const registry = getContract(
-        'ShipmentRegistry',
+        "ShipmentRegistry",
         ShipmentRegistryABI.abi,
         provider,
         chainId
       );
       const token = getContract(
-        'LogiToken',
+        "LogiToken",
         LogiTokenABI.abi,
         provider,
         chainId
@@ -90,7 +106,7 @@ export default function BuyerPanel({ account, chainId }) {
             const latestCid =
               shipment.metadataCids.length > 0
                 ? shipment.metadataCids[shipment.metadataCids.length - 1]
-                : '';
+                : "";
             return {
               id: id.toString(),
               staff: shipment.staff,
@@ -105,21 +121,23 @@ export default function BuyerPanel({ account, chainId }) {
         })
       );
 
-      setShipments(shipmentsData.filter((s) => s !== null));
+      const filteredShipments = shipmentsData.filter((s) => s !== null);
+      setAllShipments(filteredShipments);
+      setShipments(filteredShipments.slice(0, displayedShipmentsCount));
 
       // Load my orders from logs
       try {
         const iface = new ethers.Interface(ShipmentRegistryABI.abi);
-        const topic = iface.getEvent('OrderCreated').topicHash;
+        const topic = iface.getEvent("OrderCreated").topicHash;
         const logs = await provider.getLogs({
           address: await registry.getAddress(),
           topics: [topic, null, null],
-          fromBlock: '0x0',
-          toBlock: 'latest',
+          fromBlock: "0x0",
+          toBlock: "latest",
         });
         const myOrders = logs
           .map((l) => {
-            const ev = iface.decodeEventLog('OrderCreated', l.data, l.topics);
+            const ev = iface.decodeEventLog("OrderCreated", l.data, l.topics);
             const orderId = ev.orderId.toString();
             const buyer = ev.buyer;
             const cid = ev.orderCid;
@@ -128,13 +146,16 @@ export default function BuyerPanel({ account, chainId }) {
           })
           .filter((o) => o.buyer.toLowerCase() === account.toLowerCase())
           .reverse();
-        setOrders(myOrders);
+
+        setAllOrders(myOrders);
+        setOrders(myOrders.slice(0, displayedOrdersCount));
       } catch (e) {
-        console.warn('Load orders failed', e);
+        console.warn("Load orders failed", e);
+        setAllOrders([]);
         setOrders([]);
       }
     } catch (err) {
-      console.error('Error loading buyer data:', err);
+      console.error("Error loading buyer data:", err);
       setError(parseContractError(err));
     } finally {
       setLoadingShipments(false);
@@ -146,7 +167,7 @@ export default function BuyerPanel({ account, chainId }) {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const escrow = getContract(
-        'EscrowMilestone',
+        "EscrowMilestone",
         EscrowMilestoneABI.abi,
         provider,
         chainId
@@ -164,11 +185,11 @@ export default function BuyerPanel({ account, chainId }) {
       // Show an info hint when escrow was auto-opened by registry on creation
       if (details.isActive && Number(details.totalAmount) > 0) {
         setSuccess(
-          'Escrow is active and funded automatically at shipment creation.'
+          "Escrow is active and funded automatically at shipment creation."
         );
       }
     } catch (err) {
-      console.log('No escrow found for this shipment');
+      console.log("No escrow found for this shipment");
       setEscrowDetails(null);
     }
   };
@@ -178,13 +199,13 @@ export default function BuyerPanel({ account, chainId }) {
     setOrderForm((prev) => ({ ...prev, [name]: value }));
 
     // Auto-calculate shipping fee when destination changes
-    if (name === 'destination' && value.trim().length > 3) {
+    if (name === "destination" && value.trim().length > 3) {
       calculateShippingFeeDebounced(value);
-    } else if (name === 'destination' && value.trim().length === 0) {
+    } else if (name === "destination" && value.trim().length === 0) {
       // Clear fee when destination is cleared
       setShippingFee(null);
       setShippingDistance(null);
-      setFeeError('');
+      setFeeError("");
       setDeliveryCoordinates(null);
     }
   };
@@ -204,12 +225,12 @@ export default function BuyerPanel({ account, chainId }) {
     }
 
     setCalculatingFee(true);
-    setFeeError('');
+    setFeeError("");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const registry = getContract(
-        'ShipmentRegistry',
+        "ShipmentRegistry",
         ShipmentRegistryABI.abi,
         provider,
         chainId
@@ -220,10 +241,10 @@ export default function BuyerPanel({ account, chainId }) {
       setShippingFee(result.fee);
       setShippingDistance(result.distance);
       setDeliveryCoordinates(result.coordinates);
-      setFeeError('');
+      setFeeError("");
     } catch (err) {
-      console.error('Error calculating shipping fee:', err);
-      setFeeError(err.message || 'Unable to calculate shipping fee');
+      console.error("Error calculating shipping fee:", err);
+      setFeeError(err.message || "Unable to calculate shipping fee");
       setShippingFee(null);
       setShippingDistance(null);
       setDeliveryCoordinates(null);
@@ -234,37 +255,37 @@ export default function BuyerPanel({ account, chainId }) {
 
   const createOrder = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-    setTxHash('');
+    setError("");
+    setSuccess("");
+    setTxHash("");
 
     const { productName, origin, destination, quantity } = orderForm;
     if (!productName || !origin || !destination) {
-      setError('Please fill required order fields');
+      setError("Please fill required order fields");
       return;
     }
     if (!quantity) {
-      setError('Please provide quantity');
+      setError("Please provide quantity");
       return;
     }
 
     // Validate shipping fee is calculated
     if (!shippingFee && shippingFee !== 0) {
       setError(
-        'Please wait for shipping fee calculation or enter a valid destination address'
+        "Please wait for shipping fee calculation or enter a valid destination address"
       );
       return;
     }
 
     try {
       // Upload order metadata to IPFS if configured; otherwise embed minimal JSON
-      let orderCid = '';
+      let orderCid = "";
       const data = {
         ...orderForm,
         shippingFee: shippingFee,
         shippingDistance: shippingDistance,
         deliveryCoordinates: deliveryCoordinates,
-        version: '1.0',
+        version: "1.0",
         createdAt: new Date().toISOString(),
         buyer: account,
       };
@@ -275,7 +296,7 @@ export default function BuyerPanel({ account, chainId }) {
         // As a fallback require manual CID entry is not ideal; embed JSON as CID-like string is not possible.
         // Force config to proceed
         setError(
-          'Pinata chưa cấu hình. Vui lòng thêm VITE_PINATA_* để tạo order'
+          "Pinata chưa cấu hình. Vui lòng thêm VITE_PINATA_* để tạo order"
         );
         return;
       }
@@ -283,7 +304,7 @@ export default function BuyerPanel({ account, chainId }) {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const registry = getContract(
-        'ShipmentRegistry',
+        "ShipmentRegistry",
         ShipmentRegistryABI.abi,
         signer,
         chainId
@@ -297,11 +318,11 @@ export default function BuyerPanel({ account, chainId }) {
           );
           setTxHash(receipt.hash);
           setOrderForm({
-            productName: '',
-            origin: '',
-            destination: '',
-            quantity: '',
-            notes: '',
+            productName: "",
+            origin: "",
+            destination: "",
+            quantity: "",
+            notes: "",
           });
           setShippingFee(null);
           setShippingDistance(null);
@@ -310,17 +331,17 @@ export default function BuyerPanel({ account, chainId }) {
         },
         (errorMsg) => setError(parseContractError({ message: errorMsg }))
       );
-      console.log('Order tx:', receipt);
+      console.log("Order tx:", receipt);
     } catch (err) {
-      console.error('Create order error:', err);
+      console.error("Create order error:", err);
       setError(parseContractError(err));
     }
   };
 
   const selectShipment = async (shipment) => {
     setSelectedShipment(shipment);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
     await loadEscrowDetails(shipment.id);
   };
 
@@ -328,31 +349,31 @@ export default function BuyerPanel({ account, chainId }) {
     e.preventDefault();
 
     if (!account || !selectedShipment || !depositAmount) {
-      setError('Please provide all required information');
+      setError("Please provide all required information");
       return;
     }
 
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount <= 0) {
-      setError('Invalid deposit amount');
+      setError("Invalid deposit amount");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
-    setTxHash('');
+    setError("");
+    setSuccess("");
+    setTxHash("");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const escrow = getContract(
-        'EscrowMilestone',
+        "EscrowMilestone",
         EscrowMilestoneABI.abi,
         signer,
         chainId
       );
-      const token = getContract('LogiToken', LogiTokenABI.abi, signer, chainId);
+      const token = getContract("LogiToken", LogiTokenABI.abi, signer, chainId);
 
       const amountWei = ethers.parseEther(depositAmount);
 
@@ -376,13 +397,13 @@ export default function BuyerPanel({ account, chainId }) {
         const approveReceipt = await handleTransaction(
           () => token.approve(escrowAddress, amountWei),
           () => {
-            console.log('Tokens approved for escrow');
+            console.log("Tokens approved for escrow");
           },
           (err) => {
             throw new Error(`Approval failed: ${err}`);
           }
         );
-        console.log('Approval transaction:', approveReceipt);
+        console.log("Approval transaction:", approveReceipt);
       }
 
       // Step 3: Open escrow (30 days deadline)
@@ -393,7 +414,7 @@ export default function BuyerPanel({ account, chainId }) {
         async (receipt) => {
           setSuccess(`Escrow opened with ${depositAmount} LOGI tokens!`);
           setTxHash(receipt.hash);
-          setDepositAmount('');
+          setDepositAmount("");
 
           // Reload data
           await loadBuyerData();
@@ -404,9 +425,9 @@ export default function BuyerPanel({ account, chainId }) {
         }
       );
 
-      console.log('Transaction receipt:', receipt);
+      console.log("Transaction receipt:", receipt);
     } catch (err) {
-      console.error('Error opening escrow:', err);
+      console.error("Error opening escrow:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -422,37 +443,37 @@ export default function BuyerPanel({ account, chainId }) {
       !manualEscrowAmount ||
       !manualEscrowDeadline
     ) {
-      setError('Please provide all required information');
+      setError("Please provide all required information");
       return;
     }
 
     const amount = parseFloat(manualEscrowAmount);
     if (isNaN(amount) || amount <= 0) {
-      setError('Invalid escrow amount');
+      setError("Invalid escrow amount");
       return;
     }
 
     const deadlineDays = parseInt(manualEscrowDeadline);
     if (isNaN(deadlineDays) || deadlineDays <= 0) {
-      setError('Invalid deadline (must be positive number of days)');
+      setError("Invalid deadline (must be positive number of days)");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
-    setTxHash('');
+    setError("");
+    setSuccess("");
+    setTxHash("");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const escrow = getContract(
-        'EscrowMilestone',
+        "EscrowMilestone",
         EscrowMilestoneABI.abi,
         signer,
         chainId
       );
-      const token = getContract('LogiToken', LogiTokenABI.abi, signer, chainId);
+      const token = getContract("LogiToken", LogiTokenABI.abi, signer, chainId);
 
       const amountWei = ethers.parseEther(manualEscrowAmount);
 
@@ -476,13 +497,13 @@ export default function BuyerPanel({ account, chainId }) {
         const approveReceipt = await handleTransaction(
           () => token.approve(escrowAddress, amountWei),
           () => {
-            console.log('Tokens approved for escrow');
+            console.log("Tokens approved for escrow");
           },
           (err) => {
             throw new Error(`Approval failed: ${err}`);
           }
         );
-        console.log('Approval transaction:', approveReceipt);
+        console.log("Approval transaction:", approveReceipt);
       }
 
       // Step 3: Open escrow with user-specified deadline
@@ -496,8 +517,8 @@ export default function BuyerPanel({ account, chainId }) {
             `Escrow opened successfully with ${manualEscrowAmount} LOGI tokens!`
           );
           setTxHash(receipt.hash);
-          setManualEscrowAmount('');
-          setManualEscrowDeadline('30');
+          setManualEscrowAmount("");
+          setManualEscrowDeadline("30");
 
           // Reload data
           await loadBuyerData();
@@ -508,9 +529,9 @@ export default function BuyerPanel({ account, chainId }) {
         }
       );
 
-      console.log('Transaction receipt:', receipt);
+      console.log("Transaction receipt:", receipt);
     } catch (err) {
-      console.error('Error opening manual escrow:', err);
+      console.error("Error opening manual escrow:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -519,31 +540,31 @@ export default function BuyerPanel({ account, chainId }) {
 
   const depositToEscrow = async () => {
     if (!selectedShipment || !depositAmount) {
-      setError('Please provide deposit amount');
+      setError("Please provide deposit amount");
       return;
     }
 
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount <= 0) {
-      setError('Invalid deposit amount');
+      setError("Invalid deposit amount");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
-    setTxHash('');
+    setError("");
+    setSuccess("");
+    setTxHash("");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const escrow = getContract(
-        'EscrowMilestone',
+        "EscrowMilestone",
         EscrowMilestoneABI.abi,
         signer,
         chainId
       );
-      const token = getContract('LogiToken', LogiTokenABI.abi, signer, chainId);
+      const token = getContract("LogiToken", LogiTokenABI.abi, signer, chainId);
 
       const amountWei = ethers.parseEther(depositAmount);
 
@@ -551,7 +572,7 @@ export default function BuyerPanel({ account, chainId }) {
       const escrowAddress = await escrow.getAddress();
       await handleTransaction(
         () => token.approve(escrowAddress, amountWei),
-        () => console.log('Approved'),
+        () => console.log("Approved"),
         (err) => {
           throw new Error(err);
         }
@@ -562,7 +583,7 @@ export default function BuyerPanel({ account, chainId }) {
         async (receipt) => {
           setSuccess(`Deposited ${depositAmount} LOGI to escrow!`);
           setTxHash(receipt.hash);
-          setDepositAmount('');
+          setDepositAmount("");
           await loadBuyerData();
           await loadEscrowDetails(selectedShipment.id);
         },
@@ -571,9 +592,9 @@ export default function BuyerPanel({ account, chainId }) {
         }
       );
 
-      console.log('Deposit receipt:', receipt);
+      console.log("Deposit receipt:", receipt);
     } catch (err) {
-      console.error('Error depositing:', err);
+      console.error("Error depositing:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -582,33 +603,33 @@ export default function BuyerPanel({ account, chainId }) {
 
   const confirmDelivery = async () => {
     if (!selectedShipment) {
-      setError('Please select a shipment first');
+      setError("Please select a shipment first");
       return;
     }
 
     // Pre-checks to avoid contract reverts
     if (selectedShipment.milestoneStatus !== 3) {
-      setError('Shipment must be ARRIVED before confirming delivery.');
+      setError("Shipment must be ARRIVED before confirming delivery.");
       return;
     }
 
     if (!escrowDetails || !escrowDetails.isActive) {
       setError(
-        'Escrow must be active to release payment. Please open or activate escrow first.'
+        "Escrow must be active to release payment. Please open or activate escrow first."
       );
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
-    setTxHash('');
+    setError("");
+    setSuccess("");
+    setTxHash("");
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const registry = getContract(
-        'ShipmentRegistry',
+        "ShipmentRegistry",
         ShipmentRegistryABI.abi,
         signer,
         chainId
@@ -618,7 +639,7 @@ export default function BuyerPanel({ account, chainId }) {
       await handleTransaction(
         () => registry.updateMilestone(selectedShipment.id, 4),
         async (receipt) => {
-          setSuccess('Delivery confirmed! Final payment released.');
+          setSuccess("Delivery confirmed! Final payment released.");
           setTxHash(receipt.hash);
           // Update local state to reflect DELIVERED and refresh escrow
           setSelectedShipment((prev) =>
@@ -634,7 +655,7 @@ export default function BuyerPanel({ account, chainId }) {
         }
       );
     } catch (err) {
-      console.error('Error confirming delivery:', err);
+      console.error("Error confirming delivery:", err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -736,29 +757,29 @@ export default function BuyerPanel({ account, chainId }) {
             style={{
               marginTop: 16,
               padding: 12,
-              backgroundColor: '#f5f5f5',
+              backgroundColor: "#f5f5f5",
               borderRadius: 8,
-              border: '1px solid #ddd',
+              border: "1px solid #ddd",
             }}
           >
             {calculatingFee && (
-              <p style={{ margin: 0, color: '#666' }}>
+              <p style={{ margin: 0, color: "#666" }}>
                 🔄 Đang tính phí vận chuyển...
               </p>
             )}
 
             {feeError && !calculatingFee && (
-              <div style={{ color: '#d32f2f', margin: 0 }}>⚠️ {feeError}</div>
+              <div style={{ color: "#d32f2f", margin: 0 }}>⚠️ {feeError}</div>
             )}
 
             {shippingFee !== null && !calculatingFee && !feeError && (
               <div>
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+                    display: "flex",
+                    justifyContent: "space-between",
                     marginBottom: 8,
-                    color: '#333',
+                    color: "#333",
                   }}
                 >
                   <span>
@@ -768,10 +789,10 @@ export default function BuyerPanel({ account, chainId }) {
                 </div>
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+                    display: "flex",
+                    justifyContent: "space-between",
                     marginBottom: 8,
-                    color: '#333',
+                    color: "#333",
                   }}
                 >
                   <span>
@@ -780,18 +801,18 @@ export default function BuyerPanel({ account, chainId }) {
                   <span
                     style={{
                       fontSize: 18,
-                      fontWeight: 'bold',
-                      color: '#2e7d32',
+                      fontWeight: "bold",
+                      color: "#2e7d32",
                     }}
                   >
                     {shippingFee} LOGI
                   </span>
                 </div>
-                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
                   {getShippingTierDescription(shippingDistance)}
                 </div>
                 {deliveryCoordinates && (
-                  <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
                     📌 {deliveryCoordinates.displayAddress}
                   </div>
                 )}
@@ -806,15 +827,15 @@ export default function BuyerPanel({ account, chainId }) {
           disabled={loadingOrders || calculatingFee}
         >
           {loadingOrders
-            ? 'Processing...'
+            ? "Processing..."
             : calculatingFee
-            ? 'Calculating...'
-            : 'Create Order'}
+            ? "Calculating..."
+            : "Create Order"}
         </button>
       </form>
 
       <div className="panel-header" style={{ marginTop: 8 }}>
-        <h3>My Orders ({orders.length})</h3>
+        <h3>My Orders ({allOrders.length})</h3>
       </div>
       <div className="shipments-grid" style={{ marginBottom: 24 }}>
         {loadingOrders ? (
@@ -831,20 +852,18 @@ export default function BuyerPanel({ account, chainId }) {
               </div>
               <div className="card-body">
                 <p>
-                  <strong>Created:</strong>{' '}
+                  <strong>Created:</strong>{" "}
                   {new Date(o.timestamp * 1000).toLocaleString()}
                 </p>
                 <button
                   className="metadata-link"
-                  onClick={() =>
-                    setViewingOrder({ id: o.orderId, metadataCid: o.cid })
-                  }
+                  onClick={() => setViewingOrder(o)}
                   style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#2563eb',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
+                    background: "none",
+                    border: "none",
+                    color: "#2563eb",
+                    cursor: "pointer",
+                    textDecoration: "underline",
                     padding: 0,
                   }}
                 >
@@ -855,20 +874,44 @@ export default function BuyerPanel({ account, chainId }) {
           ))
         )}
       </div>
+
+      {/* Load More Orders Button */}
+      {orders.length > 0 && orders.length < allOrders.length && (
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <button
+            className="btn-secondary"
+            onClick={() =>
+              setDisplayedOrdersCount((prev) => prev + RECORDS_PER_PAGE)
+            }
+            style={{
+              padding: "10px 20px",
+              fontSize: "14px",
+              fontWeight: "600",
+            }}
+          >
+            Load More Orders (
+            {Math.min(RECORDS_PER_PAGE, allOrders.length - orders.length)} more
+            available)
+          </button>
+          <p style={{ marginTop: "10px", color: "#6b7280", fontSize: "14px" }}>
+            Showing {orders.length} of {allOrders.length} orders
+          </p>
+        </div>
+      )}
       <div className="panel-header">
         <h2>Manage Escrow</h2>
         <p className="subtitle">
           As Buyer, you can manage escrow payments for your shipments
         </p>
         <div className="token-balance">
-          <strong>Your Balance:</strong> {parseFloat(tokenBalance).toFixed(2)}{' '}
+          <strong>Your Balance:</strong> {parseFloat(tokenBalance).toFixed(2)}{" "}
           LOGI
         </div>
       </div>
 
       <div className="panel-content">
         <div className="shipments-list">
-          <h3>Your Shipments ({shipments.length})</h3>
+          <h3>Your Shipments ({allShipments.length})</h3>
 
           {loadingShipments ? (
             <p>Loading shipments...</p>
@@ -882,7 +925,7 @@ export default function BuyerPanel({ account, chainId }) {
                 <div
                   key={shipment.id}
                   className={`shipment-card ${
-                    selectedShipment?.id === shipment.id ? 'selected' : ''
+                    selectedShipment?.id === shipment.id ? "selected" : ""
                   }`}
                   onClick={() => selectShipment(shipment)}
                 >
@@ -904,7 +947,7 @@ export default function BuyerPanel({ account, chainId }) {
                       ...
                     </p>
                     <p>
-                      <strong>Created:</strong>{' '}
+                      <strong>Created:</strong>{" "}
                       {new Date(shipment.timestamp * 1000).toLocaleDateString()}
                     </p>
                     {shipment.metadataCid && (
@@ -915,11 +958,11 @@ export default function BuyerPanel({ account, chainId }) {
                           setViewingShipment(shipment);
                         }}
                         style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#2563eb',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
+                          background: "none",
+                          border: "none",
+                          color: "#2563eb",
+                          cursor: "pointer",
+                          textDecoration: "underline",
                           padding: 0,
                         }}
                       >
@@ -929,6 +972,45 @@ export default function BuyerPanel({ account, chainId }) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Load More Shipments Button */}
+          {shipments.length > 0 && shipments.length < allShipments.length && (
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: "20px",
+                marginBottom: "20px",
+              }}
+            >
+              <button
+                className="btn-secondary"
+                onClick={() =>
+                  setDisplayedShipmentsCount((prev) => prev + RECORDS_PER_PAGE)
+                }
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                }}
+              >
+                Load More Shipments (
+                {Math.min(
+                  RECORDS_PER_PAGE,
+                  allShipments.length - shipments.length
+                )}{" "}
+                more available)
+              </button>
+              <p
+                style={{
+                  marginTop: "10px",
+                  color: "#6b7280",
+                  fontSize: "14px",
+                }}
+              >
+                Showing {shipments.length} of {allShipments.length} shipments
+              </p>
             </div>
           )}
         </div>
@@ -965,15 +1047,15 @@ export default function BuyerPanel({ account, chainId }) {
                     <span
                       className={
                         escrowDetails.isCompleted
-                          ? 'text-success'
-                          : 'text-primary'
+                          ? "text-success"
+                          : "text-primary"
                       }
                     >
                       {escrowDetails.isCompleted
-                        ? 'Completed'
+                        ? "Completed"
                         : escrowDetails.isActive
-                        ? 'Active'
-                        : 'Inactive'}
+                        ? "Active"
+                        : "Inactive"}
                     </span>
                   </div>
                 </div>
@@ -987,8 +1069,8 @@ export default function BuyerPanel({ account, chainId }) {
                         className="action-button primary"
                       >
                         {loading
-                          ? 'Processing...'
-                          : 'Confirm Delivery & Release Payment'}
+                          ? "Processing..."
+                          : "Confirm Delivery & Release Payment"}
                       </button>
                     )}
                   {selectedShipment.milestoneStatus !== 3 &&
@@ -1034,7 +1116,7 @@ export default function BuyerPanel({ account, chainId }) {
                             disabled={loading}
                             className="action-button primary"
                           >
-                            {loading ? 'Processing...' : 'Deposit to Escrow'}
+                            {loading ? "Processing..." : "Deposit to Escrow"}
                           </button>
                         </form>
                       </div>
@@ -1076,7 +1158,7 @@ export default function BuyerPanel({ account, chainId }) {
 
                   <div className="form-group">
                     <label htmlFor="manualEscrowDeadline">
-                      Deadline (days from now):{' '}
+                      Deadline (days from now):{" "}
                       <span className="required">*</span>
                     </label>
                     <input
@@ -1096,12 +1178,12 @@ export default function BuyerPanel({ account, chainId }) {
                     style={{
                       marginBottom: 12,
                       padding: 12,
-                      backgroundColor: '#f5f5f5',
+                      backgroundColor: "#f5f5f5",
                       borderRadius: 4,
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 14 }}>
-                      <strong>Your token balance:</strong>{' '}
+                      <strong>Your token balance:</strong>{" "}
                       {parseFloat(tokenBalance).toFixed(2)} LOGI
                     </p>
                   </div>
@@ -1111,7 +1193,7 @@ export default function BuyerPanel({ account, chainId }) {
                     disabled={loading}
                     className="action-button primary"
                   >
-                    {loading ? 'Processing...' : 'Open Escrow & Approve Tokens'}
+                    {loading ? "Processing..." : "Open Escrow & Approve Tokens"}
                   </button>
                 </form>
               </div>
@@ -1147,7 +1229,16 @@ export default function BuyerPanel({ account, chainId }) {
         {/* Order Detail Modal */}
         {viewingOrder && (
           <ShipmentDetailModal
-            shipment={viewingOrder}
+            shipment={{
+              id: -1, // Mark as order (negative ID to skip document loading)
+              orderId: viewingOrder.orderId,
+              buyer: viewingOrder.buyer,
+              milestoneStatus: 0,
+              timestamp: viewingOrder.timestamp,
+              metadataCid: viewingOrder.cid,
+              shipper: null,
+              carrier: null,
+            }}
             onClose={() => setViewingOrder(null)}
           />
         )}

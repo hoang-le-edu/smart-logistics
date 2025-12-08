@@ -9,12 +9,15 @@ export default function PackerPanel({ account, chainId }) {
   const [uploadedSuccess, setUploadedSuccess] = useState(null);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [displayCount, setDisplayCount] = useState(5); // Start with 5 records
+  const [totalAvailable, setTotalAvailable] = useState(0);
+  const RECORDS_PER_PAGE = 5;
 
   useEffect(() => {
     if (account) {
       loadPendingShipments();
     }
-  }, [account, chainId]);
+  }, [account, chainId, displayCount]);
 
   async function loadPendingShipments() {
     try {
@@ -26,29 +29,39 @@ export default function PackerPanel({ account, chainId }) {
       const pending = [];
       const ZERO = "0x0000000000000000000000000000000000000000";
 
-      for (let i = 0; i < totalShipments; i++) {
-        const shipment = await registry.getShipment(i);
-        // After contract update, allow Packer to see all CREATED shipments
-        if (Number(shipment.status) === 0) {
-          pending.push({
-            id: Number(shipment.id),
-            staff: shipment.staff,
-            carrier: shipment.carrier,
-            buyer: shipment.buyer,
-            warehouse: shipment.warehouse,
-            status: Number(shipment.status),
-            createdAt: new Date(
-              Number(shipment.createdAt) * 1000
-            ).toLocaleString(),
-          });
+      // Load only up to displayCount shipments to avoid 429 errors
+      let loadedCount = 0;
+      for (let i = 0; i < totalShipments && loadedCount < displayCount; i++) {
+        try {
+          const shipment = await registry.getShipment(i);
+          // After contract update, allow Packer to see all CREATED shipments
+          if (Number(shipment.status) === 0) {
+            pending.push({
+              id: Number(shipment.id),
+              staff: shipment.staff,
+              carrier: shipment.carrier,
+              buyer: shipment.buyer,
+              warehouse: shipment.warehouse,
+              status: Number(shipment.status),
+              createdAt: new Date(
+                Number(shipment.createdAt) * 1000
+              ).toLocaleString(),
+            });
+            loadedCount++;
+          }
+        } catch (err) {
+          console.warn(`Skipping shipment ${i}:`, err.message);
         }
       }
 
       setShipments(pending);
+      setTotalAvailable(Number(totalShipments));
       setError("");
     } catch (error) {
       console.error("Error loading shipments:", error);
-      setError("Failed to load shipments: " + (error?.message || String(error)));
+      setError(
+        "Failed to load shipments: " + (error?.message || String(error))
+      );
     } finally {
       setLoading(false);
     }
@@ -65,7 +78,9 @@ export default function PackerPanel({ account, chainId }) {
       loadPendingShipments();
     } catch (error) {
       console.error("Error updating milestone:", error);
-      setError("Failed to mark as picked up: " + (error?.message || String(error)));
+      setError(
+        "Failed to mark as picked up: " + (error?.message || String(error))
+      );
       setSuccess("");
     }
   }
@@ -91,7 +106,9 @@ export default function PackerPanel({ account, chainId }) {
       setUploadingDoc(null);
     } catch (error) {
       console.error("Error uploading document:", error);
-      setError("Failed to upload document: " + (error?.message || String(error)));
+      setError(
+        "Failed to upload document: " + (error?.message || String(error))
+      );
       setSuccess("");
       setUploadingDoc(null);
     }
@@ -174,18 +191,18 @@ export default function PackerPanel({ account, chainId }) {
                 </button>
 
                 <label className="btn-secondary file-upload-label">
-                    {uploadingDoc === shipment.id
-                      ? "Uploading..."
-                      : uploadedSuccess === shipment.id
-                      ? "Upload Success"
-                      : "Upload Document"}
+                  {uploadingDoc === shipment.id
+                    ? "Uploading..."
+                    : uploadedSuccess === shipment.id
+                    ? "Upload Success"
+                    : "Upload Document"}
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png"
                     onChange={(e) => {
                       if (e.target.files[0]) {
-                          // Reset success indicator for a new upload attempt
-                          setUploadedSuccess(null);
+                        // Reset success indicator for a new upload attempt
+                        setUploadedSuccess(null);
                         uploadPackingDocument(shipment.id, e.target.files[0]);
                       }
                     }}
@@ -196,6 +213,40 @@ export default function PackerPanel({ account, chainId }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Load More Button */}
+      {shipments.length > 0 && shipments.length < totalAvailable && (
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: "20px",
+            paddingBottom: "20px",
+          }}
+        >
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              setDisplayCount((prev) => prev + RECORDS_PER_PAGE);
+            }}
+            disabled={loading}
+            style={{
+              padding: "10px 20px",
+              fontSize: "14px",
+              fontWeight: "600",
+            }}
+          >
+            {loading
+              ? "Loading..."
+              : `Load More (${Math.min(
+                  RECORDS_PER_PAGE,
+                  totalAvailable - shipments.length
+                )} more available)`}
+          </button>
+          <p style={{ marginTop: "10px", color: "#6b7280", fontSize: "14px" }}>
+            Showing {shipments.length} of {totalAvailable} total shipments
+          </p>
         </div>
       )}
     </div>
