@@ -1,18 +1,19 @@
-import { useState, useEffect } from "react";
-import { ethers } from "ethers";
-import { ShipmentRegistryABI } from "../abis";
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import { ShipmentRegistryABI } from '../abis';
 import {
   getContract,
   handleTransaction,
   parseContractError,
   getMilestoneStatusName,
-} from "../utils/contracts";
+} from '../utils/contracts';
 import {
   uploadShipmentMetadata,
   uploadToIPFS,
   isPinataConfigured,
-} from "../utils/ipfs";
-import { retrieveFromIPFS, getIPFSUrl } from "../utils/ipfs";
+} from '../utils/ipfs';
+import { retrieveFromIPFS, getIPFSUrl } from '../utils/ipfs';
+import ShipmentDetailModal from '../components/ShipmentDetailModal';
 
 export default function ShipperPanel({ account, chainId }) {
   const [orders, setOrders] = useState([]);
@@ -20,20 +21,22 @@ export default function ShipperPanel({ account, chainId }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [useAutoEscrow, setUseAutoEscrow] = useState(true);
   const [createWithoutOrder, setCreateWithoutOrder] = useState(false);
+  const [viewingShipment, setViewingShipment] = useState(null);
+  const [viewingOrder, setViewingOrder] = useState(null);
   const [formData, setFormData] = useState({
-    description: "",
-    origin: "",
-    destination: "",
-    weight: "",
-    items: "",
-    shippingFee: "",
-    manualBuyerAddress: "",
+    description: '',
+    origin: '',
+    destination: '',
+    weight: '',
+    items: '',
+    shippingFee: '',
+    manualBuyerAddress: '',
   });
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState("");
-  const [error, setError] = useState("");
-  const [txHash, setTxHash] = useState("");
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+  const [txHash, setTxHash] = useState('');
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -56,22 +59,22 @@ export default function ShipperPanel({ account, chainId }) {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const registry = getContract(
-        "ShipmentRegistry",
+        'ShipmentRegistry',
         ShipmentRegistryABI.abi,
         provider,
         chainId
       );
       const iface = new ethers.Interface(ShipmentRegistryABI.abi);
-      const topic = iface.getEvent("OrderCreated").topicHash;
+      const topic = iface.getEvent('OrderCreated').topicHash;
       const logs = await provider.getLogs({
         address: await registry.getAddress(),
         topics: [topic],
-        fromBlock: "0x0",
-        toBlock: "latest",
+        fromBlock: '0x0',
+        toBlock: 'latest',
       });
       const list = logs
         .map((l) => {
-          const ev = iface.decodeEventLog("OrderCreated", l.data, l.topics);
+          const ev = iface.decodeEventLog('OrderCreated', l.data, l.topics);
           return {
             orderId: ev.orderId.toString(),
             buyer: ev.buyer,
@@ -89,10 +92,10 @@ export default function ShipperPanel({ account, chainId }) {
           const productName = (
             d?.productName ||
             d?.description ||
-            ""
+            ''
           ).toString();
-          const origin = (d?.origin || "").toString();
-          const destination = (d?.destination || "").toString();
+          const origin = (d?.origin || '').toString();
+          const destination = (d?.destination || '').toString();
           const buyerLower = o.buyer.toLowerCase();
           const sig =
             `${buyerLower}|${origin}|${destination}|${productName}`.toLowerCase();
@@ -117,7 +120,7 @@ export default function ShipperPanel({ account, chainId }) {
           const lastCid =
             s.metadataCids.length > 0
               ? s.metadataCids[s.metadataCids.length - 1]
-              : "";
+              : '';
           if (!lastCid) continue;
           try {
             const meta = await retrieveFromIPFS(lastCid);
@@ -135,10 +138,10 @@ export default function ShipperPanel({ account, chainId }) {
               }
             } else {
               // Fallback: match by signature of core fields
-              const buyerLower = (meta?.buyer || "").toLowerCase();
-              const origin = (meta?.origin || "").toString();
-              const destination = (meta?.destination || "").toString();
-              const description = (meta?.description || "").toString();
+              const buyerLower = (meta?.buyer || '').toLowerCase();
+              const origin = (meta?.origin || '').toString();
+              const destination = (meta?.destination || '').toString();
+              const description = (meta?.description || '').toString();
               const sig2 =
                 `${buyerLower}|${origin}|${destination}|${description}`.toLowerCase();
               const matchedCid = orderSignatureToCid.get(sig2);
@@ -160,7 +163,7 @@ export default function ShipperPanel({ account, chainId }) {
           }
         }
       } catch (e) {
-        console.warn("Scan shipments for order status failed", e);
+        console.warn('Scan shipments for order status failed', e);
       }
 
       const withStatus = list.map((o) => {
@@ -171,10 +174,10 @@ export default function ShipperPanel({ account, chainId }) {
           hasShipment = true;
           statusText =
             Number(s.status) === 0
-              ? "Pending Confirmation"
+              ? 'Pending Confirmation'
               : getMilestoneStatusName(s.status);
         } else {
-          statusText = "Open";
+          statusText = 'Open';
         }
         return {
           ...o,
@@ -186,7 +189,7 @@ export default function ShipperPanel({ account, chainId }) {
       });
       setOrders(withStatus);
     } catch (e) {
-      console.warn("Failed to load orders", e);
+      console.warn('Failed to load orders', e);
       setOrders([]);
     } finally {
       setLoadingOrders(false);
@@ -199,12 +202,12 @@ export default function ShipperPanel({ account, chainId }) {
       // Normalize shipping fee from order metadata: it may be stored in wei
       const normalizeFee = (fee) => {
         try {
-          if (fee === null || typeof fee === "undefined") return "";
+          if (fee === null || typeof fee === 'undefined') return '';
           // Support number, string, or bigint inputs
-          if (typeof fee === "bigint") {
+          if (typeof fee === 'bigint') {
             return ethers.formatEther(fee);
           }
-          if (typeof fee === "number") {
+          if (typeof fee === 'number') {
             // If it's a small number, assume it's already human-readable
             // If it's extremely large, it might be wei; convert via BigInt
             if (fee > 1e12) {
@@ -212,7 +215,7 @@ export default function ShipperPanel({ account, chainId }) {
             }
             return String(fee);
           }
-          if (typeof fee === "string") {
+          if (typeof fee === 'string') {
             // Detect probable wei by length or all digits and large value
             const onlyDigits = /^[0-9]+$/.test(fee);
             if (onlyDigits && fee.length > 12) {
@@ -223,7 +226,7 @@ export default function ShipperPanel({ account, chainId }) {
           return String(fee);
         } catch (_) {
           // Fallback to string if formatting fails
-          return String(fee ?? "");
+          return String(fee ?? '');
         }
       };
 
@@ -237,19 +240,19 @@ export default function ShipperPanel({ account, chainId }) {
         items: (data.quantity ?? data.items) || prev.items,
         // Prefill shipping fee if present in order metadata
         shippingFee:
-          typeof data.shippingFee !== "undefined" && data.shippingFee !== null
+          typeof data.shippingFee !== 'undefined' && data.shippingFee !== null
             ? prefilledFee
             : prev.shippingFee,
       }));
       setSelectedOrder(order);
     } catch (e) {
-      console.warn("Prefill failed", e);
+      console.warn('Prefill failed', e);
     }
   };
 
   const validateForm = () => {
     if (!formData.description || !formData.origin || !formData.destination) {
-      setError("Please fill all required fields");
+      setError('Please fill all required fields');
       return false;
     }
     return true;
@@ -259,7 +262,7 @@ export default function ShipperPanel({ account, chainId }) {
     e.preventDefault();
 
     if (!account) {
-      setError("Please connect your wallet");
+      setError('Please connect your wallet');
       return;
     }
 
@@ -267,18 +270,18 @@ export default function ShipperPanel({ account, chainId }) {
       return;
     }
     if (!selectedOrder) {
-      setError("Please select an order (Prefill) first");
+      setError('Please select an order (Prefill) first');
       return;
     }
 
     setLoading(true);
-    setError("");
-    setSuccess("");
-    setTxHash("");
+    setError('');
+    setSuccess('');
+    setTxHash('');
 
     try {
       // Step 1: Upload metadata to IPFS
-      let metadataCid = "";
+      let metadataCid = '';
 
       if (isPinataConfigured()) {
         const metadata = {
@@ -295,11 +298,11 @@ export default function ShipperPanel({ account, chainId }) {
 
         const ipfsResult = await uploadShipmentMetadata(metadata);
         metadataCid = ipfsResult.cid;
-        console.log("Metadata uploaded to IPFS:", metadataCid);
+        console.log('Metadata uploaded to IPFS:', metadataCid);
       } else {
         // Fallback: use a placeholder CID
         metadataCid = `Qm${Date.now()}`;
-        console.warn("Pinata not configured, using placeholder CID");
+        console.warn('Pinata not configured, using placeholder CID');
       }
 
       // Step 2: Upload additional file if provided
@@ -307,16 +310,16 @@ export default function ShipperPanel({ account, chainId }) {
       let initialDocumentTypes = [];
       if (file && isPinataConfigured()) {
         const fileResult = await uploadToIPFS(file);
-        console.log("File uploaded to IPFS:", fileResult.cid);
+        console.log('File uploaded to IPFS:', fileResult.cid);
         initialDocumentCids = [fileResult.cid];
-        initialDocumentTypes = [file.name || "attachment"];
+        initialDocumentTypes = [file.name || 'attachment'];
       }
 
       // Step 3: Create shipment on blockchain
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const registry = getContract(
-        "ShipmentRegistry",
+        'ShipmentRegistry',
         ShipmentRegistryABI.abi,
         signer,
         chainId
@@ -328,7 +331,7 @@ export default function ShipperPanel({ account, chainId }) {
         : selectedOrder.buyer;
 
       if (!buyerAddress || !ethers.isAddress(buyerAddress)) {
-        setError("Valid buyer address is required");
+        setError('Valid buyer address is required');
         setLoading(false);
         return;
       }
@@ -359,13 +362,13 @@ export default function ShipperPanel({ account, chainId }) {
 
           // Reset form
           setFormData({
-            description: "",
-            origin: "",
-            destination: "",
-            weight: "",
-            items: "",
-            shippingFee: "",
-            manualBuyerAddress: "",
+            description: '',
+            origin: '',
+            destination: '',
+            weight: '',
+            items: '',
+            shippingFee: '',
+            manualBuyerAddress: '',
           });
           setFile(null);
           setSelectedOrder(null);
@@ -375,9 +378,9 @@ export default function ShipperPanel({ account, chainId }) {
         }
       );
 
-      console.log("Transaction receipt:", receipt);
+      console.log('Transaction receipt:', receipt);
     } catch (err) {
-      console.error("Error creating shipment:", err);
+      console.error('Error creating shipment:', err);
       setError(parseContractError(err));
     } finally {
       setLoading(false);
@@ -418,11 +421,11 @@ export default function ShipperPanel({ account, chainId }) {
                   <strong>Buyer:</strong> {o.buyer.slice(0, 10)}...
                 </p>
                 <p>
-                  <strong>Created:</strong>{" "}
+                  <strong>Created:</strong>{' '}
                   {new Date(o.timestamp * 1000).toLocaleString()}
                 </p>
                 <p>
-                  <strong>Status:</strong> {o.status || "Open"}
+                  <strong>Status:</strong> {o.status || 'Open'}
                 </p>
                 <div className="flex" style={{ gap: 8 }}>
                   <a
@@ -434,14 +437,25 @@ export default function ShipperPanel({ account, chainId }) {
                     View
                   </a>
                   {o.hasShipment ? (
-                    <a
-                      href={getIPFSUrl(o.shipmentMetadataCid)}
+                    <button
                       className="metadata-link"
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={() =>
+                        setViewingShipment({
+                          id: o.shipmentId,
+                          metadataCid: o.shipmentMetadataCid,
+                        })
+                      }
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#2563eb',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        padding: 0,
+                      }}
                     >
                       View Shipment
-                    </a>
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -493,15 +507,15 @@ export default function ShipperPanel({ account, chainId }) {
               <div
                 className="form-input"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}
               >
-                <span style={{ color: "#000" }}>
+                <span style={{ color: '#000' }}>
                   {selectedOrder
                     ? `${selectedOrder.buyer.slice(0, 10)}...`
-                    : "No order selected"}
+                    : 'No order selected'}
                 </span>
                 <button
                   type="button"
@@ -648,8 +662,8 @@ export default function ShipperPanel({ account, chainId }) {
                 </label>
                 <p className="hint">
                   {useAutoEscrow
-                    ? "✓ Escrow will be opened automatically with calculated shipping fee. Buyer will receive auto-minted LOGI tokens."
-                    : "⚠ Buyer will need to manually open escrow and deposit tokens after shipment creation."}
+                    ? '✓ Escrow will be opened automatically with calculated shipping fee. Buyer will receive auto-minted LOGI tokens.'
+                    : '⚠ Buyer will need to manually open escrow and deposit tokens after shipment creation.'}
                 </p>
               </div>
             </div>
@@ -665,10 +679,10 @@ export default function ShipperPanel({ account, chainId }) {
               onChange={handleFileChange}
               accept=".pdf,.jpg,.jpeg,.png,.json"
               className="form-file"
-              style={{ color: "#000", backgroundColor: "#fff" }}
+              style={{ color: '#000', backgroundColor: '#fff' }}
             />
-            <div style={{ marginTop: 6, color: "#000" }}>
-              {file ? `Selected: ${file.name}` : "No file selected"}
+            <div style={{ marginTop: 6, color: '#000' }}>
+              {file ? `Selected: ${file.name}` : 'No file selected'}
             </div>
             {!isPinataConfigured() && (
               <p className="hint warning">
@@ -681,7 +695,7 @@ export default function ShipperPanel({ account, chainId }) {
 
         <div className="form-actions">
           <button type="submit" disabled={loading} className="submit-button">
-            {loading ? "Creating Shipment..." : "Create Shipment"}
+            {loading ? 'Creating Shipment...' : 'Create Shipment'}
           </button>
         </div>
 
@@ -702,6 +716,22 @@ export default function ShipperPanel({ account, chainId }) {
           </div>
         )}
       </form>
+
+      {/* Shipment Detail Modal */}
+      {viewingShipment && (
+        <ShipmentDetailModal
+          shipment={viewingShipment}
+          onClose={() => setViewingShipment(null)}
+        />
+      )}
+
+      {/* Order Detail Modal */}
+      {viewingOrder && (
+        <ShipmentDetailModal
+          shipment={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+        />
+      )}
     </div>
   );
 }
