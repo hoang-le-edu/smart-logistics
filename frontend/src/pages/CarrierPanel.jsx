@@ -115,6 +115,11 @@ export default function CarrierPanel({ account, chainId }) {
 
           // Only include shipments where account is carrier
           if (shipment.carrier.toLowerCase() === account.toLowerCase()) {
+            const statusNum = Number(shipment.status);
+            // Show only IN_TRANSIT (2), DELIVERED (4), and FAILED (6)
+            if (![2, 4, 6].includes(statusNum)) {
+              return null;
+            }
             const latestCid =
               shipment.metadataCids.length > 0
                 ? shipment.metadataCids[shipment.metadataCids.length - 1]
@@ -124,7 +129,7 @@ export default function CarrierPanel({ account, chainId }) {
               staff: shipment.staff,
               carrier: shipment.carrier,
               buyer: shipment.buyer,
-              milestoneStatus: Number(shipment.status),
+              milestoneStatus: statusNum,
               metadataCid: latestCid,
               timestamp: Number(shipment.createdAt),
             };
@@ -161,10 +166,9 @@ export default function CarrierPanel({ account, chainId }) {
           const s = await registry.getShipment(i);
           const isUnassigned = s.carrier === ethers.ZeroAddress;
           const statusNum = Number(s.status);
-          const isCreated = statusNum === 0; // CREATED
           const isPickedUp = statusNum === 1; // PICKED_UP
-          // Available for carrier: either CREATED (to accept) or PICKED_UP (to move IN_TRANSIT)
-          if (isUnassigned && (isCreated || isPickedUp)) {
+          // Show ALL shipments currently in PICKED_UP state (regardless of assignment)
+          if (isPickedUp) {
             const latestCid =
               s.metadataCids.length > 0
                 ? s.metadataCids[s.metadataCids.length - 1]
@@ -173,6 +177,7 @@ export default function CarrierPanel({ account, chainId }) {
               id: i.toString(),
               staff: s.staff,
               buyer: s.buyer,
+              carrier: s.carrier,
               status: statusNum,
               metadataCid: latestCid,
               timestamp: Number(s.createdAt),
@@ -710,6 +715,13 @@ export default function CarrierPanel({ account, chainId }) {
                       <strong>Buyer:</strong> {nameCache[s.buyer?.toLowerCase()] ?? ""}
                     </p>
                     <p>
+                      <strong>Carrier:</strong> {
+                        s.carrier === ethers.ZeroAddress
+                          ? "Unassigned"
+                          : (nameCache[s.carrier?.toLowerCase()] ?? "")
+                      }
+                    </p>
+                    <p>
                       <strong>Created:</strong>{" "}
                       {new Date(s.timestamp * 1000).toLocaleDateString()}
                     </p>
@@ -741,7 +753,7 @@ export default function CarrierPanel({ account, chainId }) {
                         disabled={loading}
                         onClick={() => acceptShipment(s.id)}
                       >
-                        Mark Picked Up
+                        Accept
                       </button>
                     ) : (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -875,14 +887,14 @@ export default function CarrierPanel({ account, chainId }) {
                       <div style={{ marginTop: 8 }}>
                         <button
                           className="action-button"
-                          style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                          style={{ backgroundColor: "#000", color: "#fff" }}
                           disabled={loading}
                           onClick={(e) => {
                             e.stopPropagation();
                             openCancelModal(shipment.id);
                           }}
                         >
-                          Mark Failed
+                          Cancel
                         </button>
                       </div>
                     </div>

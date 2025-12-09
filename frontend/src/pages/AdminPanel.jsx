@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { ShipmentRegistryABI } from "../abis";
+import { LogiTokenABI } from "../abis";
 import { getContract } from "../utils/contracts";
 
 export default function AdminPanel({ account, chainId }) {
@@ -11,6 +12,16 @@ export default function AdminPanel({ account, chainId }) {
   const [grants, setGrants] = useState([]);
   const [allGrants, setAllGrants] = useState([]);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  // Mint LOGI state
+  const [mintAmount, setMintAmount] = useState("");
+  const [buyers, setBuyers] = useState([]);
+  const [selectedBuyerAddr, setSelectedBuyerAddr] = useState("");
+  // Mint recipient type: 'BUYER' or 'ADMIN'
+  const [mintRecipient, setMintRecipient] = useState("BUYER");
+  // LOGI balance for admin
+  const [tokenBalance, setTokenBalance] = useState("0");
+  // Cached token decimals
+  const [tokenDecimals, setTokenDecimals] = useState(18);
   // modal state for editing
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editIndex, setEditIndex] = useState(-1);
@@ -107,6 +118,15 @@ export default function AdminPanel({ account, chainId }) {
       // Active only for default view
       const activeOnly = roleChecks.filter((r) => r.has).map((r) => r.u);
       setGrants(activeOnly);
+
+      // Derive current BUYER roles for mint select
+      const buyersActive = activeOnly
+        .filter((g) => g.role === "BUYER")
+        .map((g) => ({ address: g.account, name: g.name || "" }));
+      setBuyers(buyersActive);
+      if (buyersActive.length > 0 && !validateAddress(selectedBuyerAddr)) {
+        setSelectedBuyerAddr(buyersActive[0].address);
+      }
     } catch (e) {
       console.warn("Load grants failed", e);
     }
@@ -114,8 +134,48 @@ export default function AdminPanel({ account, chainId }) {
 
   // load list on mount
   useEffect(() => {
-    if (chainId && account) loadGranted();
+    const init = async () => {
+      if (!(chainId && account)) return;
+      await loadGranted();
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const token = getContract("LogiToken", LogiTokenABI.abi, provider, chainId);
+        // Read decimals from token to format correctly
+        let dec = 18;
+        try {
+          dec = Number(await token.decimals());
+          setTokenDecimals(dec);
+        } catch {}
+        const bal = await token.balanceOf(account);
+        const balStr = ethers.formatUnits(bal, dec);
+        setTokenBalance(balStr);
+      } catch (e) {
+        console.warn("Load LOGI balance failed", e);
+      }
+      // Update buyers list after loading grants
+      try {
+        const buyersActive = (grants || [])
+          .filter((g) => g.role === "BUYER")
+          .map((g) => ({ address: g.account, name: g.name || "" }));
+        setBuyers(buyersActive);
+        if (buyersActive.length > 0 && !validateAddress(selectedBuyerAddr)) {
+          setSelectedBuyerAddr(buyersActive[0].address);
+        }
+      } catch {}
+    };
+    init();
   }, [chainId, account]);
+
+  // Keep buyers list in sync when grants change
+  useEffect(() => {
+    const buyersActive = (grants || [])
+      .filter((g) => g.role === "BUYER")
+      .map((g) => ({ address: g.account, name: g.name || "" }));
+    setBuyers(buyersActive);
+    if (buyersActive.length > 0 && !validateAddress(selectedBuyerAddr)) {
+      setSelectedBuyerAddr(buyersActive[0].address);
+    }
+  }, [grants]);
 
   const validateAddress = (addr) => /^0x[0-9a-fA-F]{40}$/.test(addr);
 
@@ -125,6 +185,42 @@ export default function AdminPanel({ account, chainId }) {
       const receipt = await fn();
       await receipt.wait();
       setStatus("Success: " + receipt.hash);
+    } catch (e) {
+      console.error(e);
+      setStatus("Error: " + (e.reason || e.message));
+    }
+  };
+
+  const onMintLogi = async () => {
+    const targetAddr = mintRecipient === "ADMIN" ? account : selectedBuyerAddr;
+    if (!validateAddress(targetAddr)) {
+      return setStatus("Invalid recipient address");
+    }
+    const amt = (mintAmount || "").trim();
+    if (!amt || isNaN(Number(amt)) || Number(amt) <= 0) {
+      return setStatus("Invalid mint amount");
+    }
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const token = getContract("LogiToken", LogiTokenABI.abi, signer, chainId);
+      // Assume 18 decimals
+      // Use actual decimals
+      let dec = tokenDecimals;
+      try {
+        dec = Number(await token.decimals());
+        setTokenDecimals(dec);
+      } catch {}
+      const amountWei = ethers.parseUnits(amt, dec);
+      await run(() => token.mint(targetAddr, amountWei));
+      // Refresh admin balance after mint
+      try {
+        const tokenRO = getContract("LogiToken", LogiTokenABI.abi, provider, chainId);
+        const decRO = tokenDecimals;
+        const bal = await tokenRO.balanceOf(account);
+        const balStr = ethers.formatUnits(bal, decRO);
+        setTokenBalance(balStr);
+      } catch {}
     } catch (e) {
       console.error(e);
       setStatus("Error: " + (e.reason || e.message));
@@ -337,6 +433,10 @@ export default function AdminPanel({ account, chainId }) {
         Admin: Grant/Revoke Roles
       </h2>
 
+      <div className="text-center mb-4" style={{ color: "#000" }}>
+        <strong>Your Balance:</strong> {(tokenBalance || "0").split(".")[0]} LOGI
+      </div>
+
       <div className="w-full flex justify-center">
         <table className="w-full border-collapse">
           <tbody className="w-full">
@@ -400,6 +500,70 @@ export default function AdminPanel({ account, chainId }) {
 
       <div className="text-sm text-center mt-3" style={{ color: "#000" }}>
         {status}
+      </div>
+
+      {/* Mint LOGI to Buyer */}
+      <div className="mt-6">
+        <h3 className="font-semibold" style={{ color: "#000", marginBottom: 12 }}>
+          Mint LOGI to Buyer
+        </h3>
+        <div className="rounded-lg border border-gray-200 shadow px-4 py-3 bg-white text-black">
+          <div className="form-row" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {/*
+            <div className="form-group" style={{ width: 220 }}>
+              <label>Recipient</label>
+              <select
+                className="form-select"
+                value={mintRecipient}
+                onChange={(e) => setMintRecipient(e.target.value)}
+              >
+                <option value="BUYER">Buyer (selected below)</option>
+                <option value="ADMIN">Admin (you)</option>
+              </select>
+            </div>
+            */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Buyer</label>
+              <select
+                className="form-select"
+                value={selectedBuyerAddr}
+                onChange={(e) => setSelectedBuyerAddr(e.target.value)}
+              >
+                {buyers.length === 0 ? (
+                  <option value="">No buyers available</option>
+                ) : (
+                  buyers.map((b, idx) => (
+                    <option key={idx} value={b.address}>
+                      {b.name ? `${b.name} (${b.address.slice(0,6)}...${b.address.slice(-4)})` : b.address}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Selected Address</label>
+              <input
+                className="form-input"
+                value={(mintRecipient === "ADMIN" ? account : selectedBuyerAddr) || ""}
+                readOnly
+              />
+            </div>
+            <div className="form-group" style={{ width: 220 }}>
+              <label>Amount (LOGI)</label>
+              <input
+                className="form-input"
+                value={mintAmount}
+                onChange={(e) => setMintAmount(e.target.value)}
+                placeholder="100"
+              />
+            </div>
+            <div>
+              <button className="submit-button" onClick={onMintLogi}>
+                Mint
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Recently Granted Roles */}
@@ -509,12 +673,23 @@ export default function AdminPanel({ account, chainId }) {
         </div>
       </div>
       {isEditOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-black/40"
             onClick={closeEditModal}
           />
-          <div className="relative bg-white text-black rounded-lg shadow-lg w-full max-w-md p-6">
+          <div
+            className="bg-white text-black rounded-lg shadow-lg"
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "100%",
+              maxWidth: 480,
+              padding: 24,
+            }}
+          >
             <h4 className="text-lg font-semibold mb-4">Edit Grant</h4>
             {editIndex >= 0 && (
               <>
