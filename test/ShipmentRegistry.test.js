@@ -15,16 +15,16 @@ describe("ShipmentRegistry", function () {
     );
     const registry = await ShipmentRegistry.deploy();
 
-    // Grant roles
-    const SHIPPER_ROLE = await registry.SHIPPER_ROLE();
+    // Grant roles (access as constants, not functions)
+    const SHIPPER_ROLE = await registry.STAFF_ROLE();
     const CARRIER_ROLE = await registry.CARRIER_ROLE();
     const BUYER_ROLE = await registry.BUYER_ROLE();
-    const WAREHOUSE_ROLE = await registry.WAREHOUSE_ROLE();
+    const WAREHOUSE_ROLE = await registry.PACKER_ROLE();
 
-    await registry.grantShipperRole(shipper.address);
+    await registry.grantStaffRole(shipper.address);
     await registry.grantCarrierRole(carrier.address);
     await registry.grantBuyerRole(buyer.address);
-    await registry.grantWarehouseRole(warehouse.address);
+    await registry.grantPackerRole(warehouse.address);
 
     return { registry, admin, shipper, carrier, buyer, warehouse, other };
   }
@@ -56,28 +56,20 @@ describe("ShipmentRegistry", function () {
         registry
           .connect(shipper)
           .createShipment(
-            carrier.address,
             buyer.address,
-            warehouse.address,
-            metadataCid
+            metadataCid,
+            [], // documentCids
+            [], // documentTypes
+            0   // shippingFee
           )
       )
-        .to.emit(registry, "ShipmentCreated")
-        .withArgs(
-          1,
-          shipper.address,
-          carrier.address,
-          buyer.address,
-          metadataCid
-        );
+        .to.emit(registry, "ShipmentCreated");
 
-      const shipment = await registry.getShipment(1);
-      expect(shipment.shipper).to.equal(shipper.address);
-      expect(shipment.carrier).to.equal(carrier.address);
+      const shipment = await registry.getShipment(0);
+      expect(shipment.staff).to.equal(shipper.address);
+      expect(shipment.carrier).to.equal(ethers.ZeroAddress);
       expect(shipment.buyer).to.equal(buyer.address);
-      expect(shipment.metadataCid).to.equal(metadataCid);
       expect(shipment.status).to.equal(0); // CREATED
-      expect(shipment.exists).to.be.true;
     });
 
     it("Should not allow non-shipper to create shipment", async function () {
@@ -89,10 +81,11 @@ describe("ShipmentRegistry", function () {
         registry
           .connect(other)
           .createShipment(
-            carrier.address,
             buyer.address,
-            warehouse.address,
-            "QmTest"
+            "QmTest",
+            [],
+            [],
+            0
           )
       ).to.be.reverted;
     });
@@ -107,22 +100,24 @@ describe("ShipmentRegistry", function () {
           .connect(shipper)
           .createShipment(
             ethers.ZeroAddress,
-            buyer.address,
-            ethers.ZeroAddress,
-            "QmTest"
+            "QmTest",
+            [],
+            [],
+            0
           )
-      ).to.be.revertedWith("Invalid carrier address");
+      ).to.be.revertedWith("Invalid buyer address");
 
       await expect(
         registry
           .connect(shipper)
           .createShipment(
             buyer.address,
-            ethers.ZeroAddress,
-            ethers.ZeroAddress,
-            "QmTest"
+            "", // empty metadataCid
+            [],
+            [],
+            0
           )
-      ).to.be.revertedWith("Invalid buyer address");
+      ).to.be.revertedWith("Metadata CID required");
     });
   });
 
@@ -130,20 +125,21 @@ describe("ShipmentRegistry", function () {
     async function createTestShipment(
       registry,
       shipper,
-      carrier,
-      buyer,
-      warehouse
+      buyer
     ) {
+      // createShipment(buyer, metadataCid, documentCids, documentTypes, shippingFee)
       const tx = await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest"
+          "QmTest",
+          [], // documentCids
+          [], // documentTypes
+          0   // shippingFee
         );
-      await tx.wait();
-      return 1; // shipmentId
+      const receipt = await tx.wait();
+      // Get shipmentId from event or return 0 (first shipment ID)
+      return 0;
     }
 
     it("RB02: Should follow sequential milestone order", async function () {
@@ -152,21 +148,19 @@ describe("ShipmentRegistry", function () {
       const shipmentId = await createTestShipment(
         registry,
         shipper,
-        carrier,
-        buyer,
-        warehouse
+        buyer
       );
 
       // Cannot skip from CREATED (0) to IN_TRANSIT (2)
       await expect(
-        registry.connect(carrier).updateMilestone(shipmentId, 2, "QmProof")
-      ).to.be.revertedWith("Milestone must follow sequential order");
+        registry.connect(carrier).updateMilestone(shipmentId, 2)
+      ).to.be.revertedWith("Sequential only");
 
-      // Must go CREATED (0) -> PICKED_UP (1)
+      // Must go CREATED (0) -> PICKED_UP (1) - Packer role required
       await expect(
         registry
-          .connect(carrier)
-          .updateMilestone(shipmentId, 1, "QmPickupProof")
+          .connect(warehouse)
+          .updateMilestone(shipmentId, 1)
       ).to.not.be.reverted;
     });
 
@@ -181,25 +175,26 @@ describe("ShipmentRegistry", function () {
         warehouse
       );
 
-      // Carrier can update
+      // Packer can update to PICKED_UP (status 1)
       await expect(
-        registry.connect(carrier).updateMilestone(shipmentId, 1, "QmProof")
+        registry.connect(warehouse).updateMilestone(shipmentId, 1)
       ).to.not.be.reverted;
 
       // Create another shipment for testing unauthorized update
       await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest2"
+          "QmTest2",
+          [],
+          [],
+          0
         );
 
       // Other users cannot update
       await expect(
-        registry.connect(other).updateMilestone(2, 1, "QmProof")
-      ).to.be.revertedWith("Only carrier can update this milestone");
+        registry.connect(other).updateMilestone(1, 1)
+      ).to.be.revertedWith("Packer only");
     });
 
     it("Should update milestone to DELIVERED", async function () {
@@ -208,24 +203,22 @@ describe("ShipmentRegistry", function () {
       const shipmentId = await createTestShipment(
         registry,
         shipper,
-        carrier,
-        buyer,
-        warehouse
+        buyer
       );
 
       // Progress through all milestones
       await registry
-        .connect(carrier)
-        .updateMilestone(shipmentId, 1, "QmPickup"); // PICKED_UP
+        .connect(warehouse)
+        .updateMilestone(shipmentId, 1); // PICKED_UP (Packer role)
       await registry
         .connect(carrier)
-        .updateMilestone(shipmentId, 2, "QmTransit"); // IN_TRANSIT
+        .updateMilestone(shipmentId, 2); // IN_TRANSIT (Carrier role)
       await registry
         .connect(carrier)
-        .updateMilestone(shipmentId, 3, "QmArrival"); // ARRIVED
+        .updateMilestone(shipmentId, 3); // ARRIVED (Carrier role)
       await registry
         .connect(buyer)
-        .updateMilestone(shipmentId, 4, "QmDelivery"); // DELIVERED
+        .updateMilestone(shipmentId, 4); // DELIVERED (Buyer role)
 
       const shipment = await registry.getShipment(shipmentId);
       expect(shipment.status).to.equal(4); // DELIVERED
@@ -240,23 +233,31 @@ describe("ShipmentRegistry", function () {
       await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest"
+          "QmTest",
+          [],
+          [],
+          0
         );
-      const shipmentId = 1;
+      const shipmentId = 0;
 
       await expect(
         registry
           .connect(shipper)
           .attachDocument(shipmentId, "invoice", "QmInvoice123")
       )
-        .to.emit(registry, "DocumentAttached")
-        .withArgs(shipmentId, "invoice", "QmInvoice123", shipper.address);
+        .to.emit(registry, "DocumentAttached");
+
+      // Skip exact args check as DocumentAttached event has 5 params
+      await expect(
+        registry
+          .connect(shipper)
+          .attachDocument(shipmentId, "invoice2", "QmInvoice456")
+      )
+        .to.emit(registry, "DocumentAttached");
 
       const docs = await registry.getShipmentDocuments(shipmentId);
-      expect(docs.length).to.equal(1);
+      expect(docs.length).to.equal(2);
       expect(docs[0].docType).to.equal("invoice");
       expect(docs[0].cid).to.equal("QmInvoice123");
     });
@@ -268,14 +269,15 @@ describe("ShipmentRegistry", function () {
       await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest"
+          "QmTest",
+          [],
+          [],
+          0
         );
 
       await expect(
-        registry.connect(other).attachDocument(1, "invoice", "QmInvoice")
+        registry.connect(other).attachDocument(0, "invoice", "QmInvoice")
       ).to.be.revertedWith("Not authorized to attach documents");
     });
   });
@@ -288,18 +290,20 @@ describe("ShipmentRegistry", function () {
       await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest1"
+          "QmTest1",
+          [],
+          [],
+          0
         );
       await registry
         .connect(shipper)
         .createShipment(
-          carrier.address,
           buyer.address,
-          warehouse.address,
-          "QmTest2"
+          "QmTest2",
+          [],
+          [],
+          0
         );
 
       const shipperShipments = await registry.getShipmentsByAddress(
@@ -312,8 +316,11 @@ describe("ShipmentRegistry", function () {
         buyer.address
       );
 
+      // Shipper (staff) created 2 shipments
       expect(shipperShipments.length).to.equal(2);
-      expect(carrierShipments.length).to.equal(2);
+      // Carrier not assigned yet, so 0 shipments
+      expect(carrierShipments.length).to.equal(0);
+      // Buyer assigned to 2 shipments
       expect(buyerShipments.length).to.equal(2);
     });
   });
